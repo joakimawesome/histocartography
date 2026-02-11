@@ -14,14 +14,16 @@ authors = [
     {name = "Fork Maintainer"}
 ]
 dependencies = [
-    "torch>=2.0.0",
-    "torchvision",
-    "dgl>=1.1.0",
-    "opencv-python-headless",
+    "torch>=2.0.0,<2.3.0",
+    "torchvision>=0.15.0,<0.18.0",
+    "torchdata>=0.5.0,<0.8.0",
+    "dgl>=1.1.0,<2.2.0",
+    "pydantic",
+    "opencv-python-headless<4.10.0",
     "scikit-image",
     "shapely",
     "networkx",
-    "numpy",
+    "numpy>=1.14.0,<2",
     "pandas",
     "h5py",
     "tqdm",
