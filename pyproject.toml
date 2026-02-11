@@ -32,7 +32,8 @@ dependencies = [
     "pyyaml",
     "scikit-learn",
     "scipy",
-    "seaborn"
+    "seaborn",
+    "torch_geometric"
 ]
 
 [project.urls]
