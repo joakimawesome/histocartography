@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "histocartography_ext"
+version = "0.3.0"
+description = "Extended Histocartography package for nuclei segmentation and graph construction"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "AGPL-3.0"}
+authors = [
+    {name = "Original Authors: Guillaume Jaume, Pushpak Pati, Antonio Foncubierta Rodríguez"},
+    {name = "Fork Maintainer"}
+]
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision",
+    "dgl>=1.1.0",
+    "opencv-python-headless",
+    "scikit-image",
+    "shapely",
+    "networkx",
+    "numpy",
+    "pandas",
+    "h5py",
+    "tqdm",
+    "matplotlib",
+    "pillow",
+    "pyyaml",
+    "scikit-learn",
+    "scipy",
+    "seaborn"
+]
+
+[project.urls]
+Homepage = "https://github.com/BiomedSciAI/histocartography"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["histocartography_ext*"]
