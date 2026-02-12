@@ -7,7 +7,6 @@
 #SBATCH -n 1                        # Total tasks
 #SBATCH -t 02:00:00                 # Wall time (max 48:00:00)
 #SBATCH -A ASC25123
-#SBATCH --array=0-99%10             # Array range (adjust based on slide count), %10 = max concurrent
 
 # =============================================================================
 # TACC Vista - Nuclei Graph Feature Extraction Pipeline
