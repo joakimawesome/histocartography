@@ -55,24 +55,33 @@ def segment_nuclei(
     w, h = slide.level_dimensions[level]
     
     # 3. Tissue Mask
-    # If not provided, compute from thumbnail
+    # If not provided, compute from thumbnail. If provided, assume it's a full-slide
+    # mask at any resolution (e.g. thumbnail) and infer scale factors accordingly.
+    if isinstance(tissue_mask, (tuple, list)):
+        # Allow passing outputs from other tissue-mask utilities that return
+        # (labeled_regions, binary_mask).
+        if len(tissue_mask) == 2 and tissue_mask[1] is not None:
+            tissue_mask = tissue_mask[1]
+        elif len(tissue_mask) >= 1:
+            tissue_mask = tissue_mask[0]
+
     if tissue_mask is None:
-        # Get thumbnail at a reasonable downsample
-        # Target ~1024-2048 width
+        # Get thumbnail at a reasonable downsample (target ~1024-2048 width)
         downsample = max(w // 2048, 1)
         thumb = slide.get_thumbnail((w // downsample, h // downsample))
         thumb_np = np.array(thumb)
         tissue_mask = get_tissue_mask(thumb_np)
-        
-        # Scale back to level 0 coordinates for checking
-        mask_scale_x = w / tissue_mask.shape[1]
-        mask_scale_y = h / tissue_mask.shape[0]
-    else:
-        # Assume tissue mask matches level 0 dimensions if provided directly?
-        # Or maybe it matches the thumbnail?
-        # Let's assume it matches the processing level dimensions if passed explicitly.
-        mask_scale_x = 1.0
-        mask_scale_y = 1.0
+
+    tissue_mask = np.asarray(tissue_mask)
+    if tissue_mask.ndim == 3:
+        tissue_mask = tissue_mask[:, :, 0]
+    tissue_mask = tissue_mask.astype(bool)
+
+    if tissue_mask.shape[0] == 0 or tissue_mask.shape[1] == 0:
+        raise ValueError("tissue_mask must have non-zero height and width")
+
+    mask_scale_x = w / tissue_mask.shape[1]
+    mask_scale_y = h / tissue_mask.shape[0]
 
     # 4. Iterate Tiles
     all_nuclei = []

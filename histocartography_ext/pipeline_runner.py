@@ -111,7 +111,9 @@ def run_pipeline(
             downsample = max(w // 2048, 1) # Target ~2k width
             thumb = slide.get_thumbnail((w // downsample, h // downsample))
             thumb_np = np.array(thumb)
-            tissue_mask = get_tissue_mask(thumb_np)
+            _, tissue_mask = get_tissue_mask(thumb_np)
+            if tissue_mask is not None:
+                tissue_mask = np.asarray(tissue_mask).astype(bool)
             logger.info("Tissue mask generated.")
         except Exception as e:
             logger.error(f"Failed to generate tissue mask: {e}")
