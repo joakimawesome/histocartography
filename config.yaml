@@ -1,0 +1,52 @@
+# Histocartography Pipeline Configuration
+
+# -----------------------------------------------------------------------------
+# Reproducibility
+# -----------------------------------------------------------------------------
+reproducibility:
+  seed: 42                           # Random seed for python, numpy, torch
+  output_dir: "./output"             # Base directory for all outputs
+  save_metadata: true                # Save git commit and pip freeze to metadata.json
+
+# -----------------------------------------------------------------------------
+# Segmentation (HoVer-Net)
+# -----------------------------------------------------------------------------
+segmentation:
+  model_path: null                   # Path to custom checkpoint. If null, uses pretrained
+  pretrained_data: "pannuke"         # 'pannuke' or 'monusac' if model_path is null
+  batch_size: 16                     # Inference batch size (adjust for GPU memory)
+  min_nucleus_area: 10               # Minimum area in pixels to keep a nucleus
+  device: "cuda"                     # 'cuda' or 'cpu'
+
+# -----------------------------------------------------------------------------
+# Graph Construction
+# -----------------------------------------------------------------------------
+graph:
+  method: "knn"                      # 'knn' or 'radius' or 'delaunay'
+  k: 5                               # Number of neighbors (for kNN)
+  r: 50.0                            # Radius in pixels (for radius graph)
+  max_edge_length: null              # Optional: Prune edges longer than this (pixels)
+  remove_isolated_nodes: false       # Remove nodes with no edges
+  coord_space: "level-0-pixels"      # Coordinate space of nodes 
+
+# -----------------------------------------------------------------------------
+# Feature Extraction
+# -----------------------------------------------------------------------------
+features:
+  mode: "gnn"                        # 'gnn' (deep embeddings) or 'stats' (handcrafted)
+  
+  # Options for 'gnn' mode
+  gnn_model_path: null               # Path to trained GraphEncoder state dict. If null, random init.
+  gnn_architecture: "GIN"            # Architecture type (implemented: GraphEncoder)
+  
+  # Options for 'stats' mode
+  handcrafted_features:              # List of feature groups to extract
+    - "shape"
+    - "texture"
+    - "crowdedness"
+
+# -----------------------------------------------------------------------------
+# Slide Processing
+# -----------------------------------------------------------------------------
+pipeline:
+  force_rerun: false                 # Force overwrite of existing steps
