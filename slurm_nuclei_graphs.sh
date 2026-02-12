@@ -5,7 +5,6 @@
 #SBATCH -p gh                       # GPU partition (Grace Hopper)
 #SBATCH -N 1                        # Number of nodes (required)
 #SBATCH -n 1                        # Total tasks
-#SBATCH --cpus-per-task=64
 #SBATCH -t 02:00:00                 # Wall time (max 48:00:00)
 #SBATCH -A ASC25123
 #SBATCH --array=0-99%10             # Array range (adjust based on slide count), %10 = max concurrent
@@ -21,19 +20,19 @@
 
 # --- USER CONFIG (edit these) ------------------------------------------------
 # Input
-MANIFEST="/scratch/11090/joakimchi/Pediatric-Brain-Tumor/data/manifests/v1.0.1/manifest.csv"                          # Path to manifest CSV (REQUIRED)
+MANIFEST="$SCRATCH/Pediatric-Brain-Tumor/data/manifests/v1.0.1/manifest.csv"                          # Path to manifest CSV (REQUIRED)
 SLIDE_COL="path"                                     # Column name containing slide paths
 
 # Output
-OUT_DIR="data/wsi_preprocessed"                            # Output directory
+OUT_DIR="$SCRATCH/Pediatric-Brain-Tumor/data/wsi_preprocessed"                            # Output directory
 
 # Models
 MODEL_PATH="checkpoints/hovernet_pannuke.pth"              # HoVerNet model checkpoint
 GNN_MODEL_PATH=""                                          # Optional: GNN model (leave empty for stats mode)
 
 # Environment
-CONDA_ENV="/scratch/11090/joakimchi/histocart_env"         # Conda/venv environment path
-REPO_DIR="/scratch/11090/joakimchi/histocartography"       # Histocartography repo path
+CONDA_ENV="$SCRATCH/histocart_env"         # Conda/venv environment path
+REPO_DIR="$SCRATCH/histocartography"       # Histocartography repo path
 
 # Pipeline options
 GRAPH_METHOD="knn"                                         # "knn" or "radius"
