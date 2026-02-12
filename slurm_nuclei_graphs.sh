@@ -76,10 +76,15 @@ echo "Using manifest: $MANIFEST"
 
 # --- CHECK TASK VALIDITY -----------------------------------------------------
 NUM_SLIDES=$(tail -n +2 "$MANIFEST" | wc -l)
+echo "Total slides in manifest: $NUM_SLIDES"
 
-if [[ "$SLURM_ARRAY_TASK_ID" -ge "$NUM_SLIDES" ]]; then
-    echo "Task ID $SLURM_ARRAY_TASK_ID >= number of slides ($NUM_SLIDES). Exiting."
-    exit 0
+if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
+    if [[ "$SLURM_ARRAY_TASK_ID" -ge "$NUM_SLIDES" ]]; then
+        echo "Task ID $SLURM_ARRAY_TASK_ID >= number of slides ($NUM_SLIDES). Exiting."
+        exit 0
+    fi
+else
+    echo "WARNING: SLURM_ARRAY_TASK_ID not set. Running in sequential mode."
 fi
 
 # --- RUN PIPELINE ------------------------------------------------------------
