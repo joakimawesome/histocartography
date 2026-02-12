@@ -14,25 +14,25 @@
 # =============================================================================
 # Usage:
 #   1. Edit USER CONFIG section below
-#   2. Submit: sbatch slurm_vista_nuclei_graphs.sh
+#   2. Submit: sbatch slurm_nuclei_graphs.sh
 #   3. Monitor: squeue -u $USER
 # =============================================================================
 
 # --- USER CONFIG (edit these) ------------------------------------------------
 # Input
-MANIFEST="$SCRATCH/Pediatric-Brain-Tumor/data/manifests/v1.0.1/manifest.csv"                          # Path to manifest CSV (REQUIRED)
+MANIFEST="scratch/11090/joakimchi/Pediatric-Brain-Tumor/data/manifests/v1.0.1/manifest.csv"                          # Path to manifest CSV (REQUIRED)
 SLIDE_COL="path"                                     # Column name containing slide paths
 
 # Output
-OUT_DIR="$SCRATCH/Pediatric-Brain-Tumor/data/wsi_preprocessed"                            # Output directory
+OUT_DIR="scratch/11090/joakimchi/Pediatric-Brain-Tumor/data/wsi_preprocessed"                            # Output directory
 
 # Models
 MODEL_PATH="checkpoints/hovernet_pannuke.pth"              # HoVerNet model checkpoint
 GNN_MODEL_PATH=""                                          # Optional: GNN model (leave empty for stats mode)
 
 # Environment
-CONDA_ENV="$SCRATCH/histocart_env"         # Conda/venv environment path
-REPO_DIR="$SCRATCH/histocartography"       # Histocartography repo path
+CONDA_ENV="/scratch/11090/joakimchi/histocart_env"         # Conda/venv environment path
+PROJECT_ROOT="/scratch/11090/joakimchi/histocartography"       # Histocartography repo path
 
 # Pipeline options
 GRAPH_METHOD="knn"                                         # "knn" or "radius"
@@ -59,7 +59,7 @@ if [[ -d "$CONDA_ENV" ]]; then
 fi
 
 # Change to repo directory
-cd "$REPO_DIR" || { echo "ERROR: Cannot cd to $REPO_DIR"; exit 1; }
+cd "$PROJECT_ROOT" || { echo "ERROR: Cannot cd to $PROJECT_ROOT"; exit 1; }
 
 # Create necessary directories
 mkdir -p logs
