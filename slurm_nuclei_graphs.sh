@@ -31,7 +31,7 @@ MODEL_PATH="checkpoints/hovernet_pannuke.pth"              # HoVerNet model chec
 GNN_MODEL_PATH=""                                          # Optional: GNN model (leave empty for stats mode)
 
 # Environment
-CONDA_ENV="/scratch/11090/joakimchi/histocart_env"         # Conda/venv environment path
+VENV="/scratch/11090/joakimchi/histocart_env"         # Conda/venv environment path
 PROJECT_ROOT="/scratch/11090/joakimchi/histocartography"       # Histocartography repo path
 
 # Pipeline options
@@ -56,8 +56,8 @@ module load gcc cuda
 module load python3
 
 # Activate environment
-if [[ -d "$CONDA_ENV" ]]; then
-    source "$CONDA_ENV/bin/activate" 2>/dev/null || source activate "$CONDA_ENV"
+if [[ -d "$VENV" ]]; then
+    source "$VENV/bin/activate" 2>/dev/null || source activate "$VENV"
 fi
 
 # Change to repo directory
