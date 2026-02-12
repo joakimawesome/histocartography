@@ -124,6 +124,15 @@ def main():
     parser.add_argument("--gnn_model_path", type=str, default=None, help="Path to GNN Model Checkpoint (optional).")
     parser.add_argument("--slide_col", type=str, default="slide_path", help="Column name for slide path in manifest.")
     parser.add_argument("--slides_root", type=str, default=None, help="Optional root directory to resolve relative slide paths.")
+    parser.add_argument(
+        "--run_name",
+        type=str,
+        default=None,
+        help=(
+            "Optional subdirectory name under --out_dir to keep outputs grouped (e.g. v1.0.1__graph-knn__k5__feat-stats). "
+            "If omitted, a name is derived from manifest location + graph/feature args."
+        ),
+    )
     parser.add_argument("--skip_errors", action="store_true", help="Continue processing even if a slide fails.")
     parser.add_argument("--slurm_array_idx", type=int, default=None, help="SLURM array index (0-based). Overrides SLURM_ARRAY_TASK_ID.")
     parser.add_argument("--force_rerun", action="store_true", help="Force rerun of all steps.")
@@ -182,14 +191,24 @@ def main():
     success_count = 0
     fail_count = 0
     
+    # Config structure expected by histocartography_ext.pipeline_runner
     config = {
-        'graph_method': args.graph_method,
-        'k': args.k,
-        'r': args.r,
-        'feat_mode': args.feat_mode,
-        'gnn_model_path': args.gnn_model_path,
+        'graph': {
+            'method': args.graph_method,
+            'k': args.k,
+            'r': args.r,
+        },
+        'features': {
+            'mode': args.feat_mode,
+            'gnn_model_path': args.gnn_model_path,
+        },
         # Add other potential configs here
     }
+
+    # Group all outputs under a run-specific subdirectory to avoid cluttering --out_dir
+    run_name = _sanitize_run_name(args.run_name) if args.run_name else _default_run_name(args)
+    out_dir = Path(args.out_dir) / run_name
+    logger.info(f"Run output root: {out_dir}")
     
     for slide_path in slides_to_process:
         # Helpful diagnostic when the manifest contains Windows separators or relative paths.
@@ -197,7 +216,7 @@ def main():
         try:
             run_pipeline(
                 slide_path=slide_path,
-                output_dir=args.out_dir,
+                output_dir=str(out_dir),
                 model_path=args.model_path,
                 config=config,
                 force_rerun=args.force_rerun
