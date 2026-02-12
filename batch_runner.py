@@ -40,6 +40,50 @@ def _guess_project_root_from_manifest(manifest_path: str) -> Optional[Path]:
     return None
 
 
+def _sanitize_run_name(name: str) -> str:
+    # Keep it filesystem-friendly across platforms.
+    name = (name or "").strip()
+    if not name:
+        return "run"
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.=")
+    return "".join(c if c in allowed else "_" for c in name)
+
+
+def _infer_manifest_tag(manifest_path: str) -> Optional[str]:
+    """Extract a short informative tag from manifest path (e.g., version folder)."""
+    try:
+        mp = Path(manifest_path).resolve()
+    except Exception:
+        return None
+
+    parts = [p.name for p in mp.parents]
+    # Common layout: <root>/data/manifests/<tag>/manifest.csv
+    # Grab the folder right above manifest.csv if it isn't a generic name.
+    if len(parts) >= 1:
+        tag = mp.parent.name
+        if tag and tag.lower() not in {"manifests", "data"}:
+            return tag
+    return None
+
+
+def _default_run_name(args: argparse.Namespace) -> str:
+    tag = _infer_manifest_tag(args.manifest)
+    parts = []
+    if tag:
+        parts.append(tag)
+
+    parts.append(f"graph-{args.graph_method}")
+    if args.graph_method == "knn":
+        parts.append(f"k{args.k}")
+    else:
+        # radius
+        parts.append(f"r{args.r}")
+
+    parts.append(f"feat-{args.feat_mode}")
+
+    return _sanitize_run_name("__".join(parts))
+
+
 def _resolve_slide_path(slide_path: str, manifest_path: str, slides_root: Optional[str]) -> str:
     """Resolve slide_path to an existing path when possible."""
     slide_path = _normalize_manifest_path(slide_path)
