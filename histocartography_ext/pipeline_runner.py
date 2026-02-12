@@ -247,6 +247,88 @@ def run_pipeline(
     else:
          logger.info(f"Step 4: checking features... {feat_out_path} exists. Skipping.")
 
+    # --- Step 5: QC & Visualization ---
+    qc_out_dir = slide_out_dir / "qc"
+    qc_out_dir.mkdir(exist_ok=True)
+    
+    qc_thumb_path = qc_out_dir / "qc_thumbnail.png"
+    qc_metrics_path = qc_out_dir / "qc_metrics.json"
+
+    if force_rerun or not qc_thumb_path.exists() or not qc_metrics_path.exists():
+        logger.info("Step 5: Running QC...")
+        try:
+            # We need:
+            # 1. Slide thumbnail (re-read if needed)
+            # 2. Nuclei DF (loaded)
+            # 3. Graph Data (loaded)
+            
+            # Ensure prerequisites are loaded
+            if 'nuclei_df' not in locals():
+                logger.info(f"Loading nuclei for QC from {nuclei_out_path}")
+                nuclei_df = pd.read_parquet(nuclei_out_path)
+            
+            if 'graph_data' not in locals():
+                 logger.info(f"Loading graph for QC from {graph_out_path}")
+                 graph_data = torch.load(graph_out_path)
+
+            # Get thumbnail
+            import openslide
+            slide = openslide.OpenSlide(slide_path)
+            w, h = slide.dimensions
+            # Target ~2048 width for visibility
+            downsample_target = max(w // 2048, 1)
+            thumb_size = (w // downsample_target, h // downsample_target)
+            thumb = slide.get_thumbnail(thumb_size)
+            
+            # Calculate actual downsample factor
+            # thumb.size is (width, height)
+            real_downsample = w / thumb.size[0]
+            
+            # Import QC functions
+            from .visualization.qc import (
+                generate_qc_thumbnail, 
+                compute_qc_metrics, 
+                save_qc_metrics,
+                plot_qc_distributions
+            )
+            
+            # 1. QC Thumbnail
+            logger.info("Generating QC thumbnail...")
+            generate_qc_thumbnail(
+                thumb_image=thumb,
+                nuclei_df=nuclei_df,
+                graph_data=graph_data,
+                output_path=str(qc_thumb_path),
+                downsample_factor=real_downsample
+            )
+            
+            # 2. QC Metrics
+            logger.info("Computing QC metrics...")
+            slide_info = {
+                'width': w, 
+                'height': h, 
+                'mpp': float(slide.properties.get('openslide.mpp-x', 0.5)) # Default to 0.5 if missing
+            }
+            metrics = compute_qc_metrics(nuclei_df, graph_data, slide_info)
+            save_qc_metrics(metrics, str(qc_metrics_path))
+            
+            # 3. QC Distributions
+            # Plot graph statistics
+            # Optional but good for MICCAI
+            # We can save this to qc_out_dir
+            dist_plot_path = qc_out_dir / "qc_distributions.png"
+            # plot_qc_distributions(graph_data, nuclei_df, str(dist_plot_path)) # Optional
+            
+            logger.info(f"QC completed. Saved to {qc_out_dir}")
+
+        except Exception as e:
+            logger.error(f"QC step failed: {e}")
+            # Don't raise, as pipeline core finished. Just log error.
+            # Or raise if strict.
+            logger.warning("Continuing despite QC failure.")
+    else:
+        logger.info("Step 5: QC already exists. Skipping.")
+
     logger.info("Pipeline completed successfully.")
     return str(slide_out_dir)
 
