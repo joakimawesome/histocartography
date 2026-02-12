@@ -41,6 +41,8 @@ FEAT_MODE="stats"                                          # "stats" or "gnn"
 # -----------------------------------------------------------------------------
 
 # --- ENVIRONMENT SETUP -------------------------------------------------------
+set -euo pipefail
+
 echo "=== Job Info ==="
 echo "Job ID: $SLURM_JOB_ID"
 echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
