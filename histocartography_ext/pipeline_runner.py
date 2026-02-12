@@ -15,7 +15,8 @@ try:
     from .nuclei.segmentation import segment_nuclei
 except ImportError:
     # Fallback or placeholder if dependencies are missing during dev
-    def segment_nuclei(*args, **kwargs): raise NotImplementedError("segment_nuclei not imported")
+    def segment_nuclei(*args, **kwargs) -> pd.DataFrame:
+        raise NotImplementedError("segment_nuclei not imported")
 
 from .preprocessing.graph_builder_pyg import build_nuclei_graph, save_nuclei_graph
 # Feature extraction imports
