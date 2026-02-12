@@ -1,8 +1,15 @@
 import networkx as nx
 import numpy as np
-import dgl
 import copy
 import torch
+
+try:
+    import dgl
+except ImportError:
+    dgl = None
+except Exception:
+    # Catch other errors like DLL missing
+    dgl = None
 
 def adj_to_networkx(
         adj,
