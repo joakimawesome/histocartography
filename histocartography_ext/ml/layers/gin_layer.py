@@ -11,8 +11,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from histocartography_ext.ml.layers.constants import GNN_NODE_FEAT_IN, GNN_NODE_FEAT_OUT
-from histocartography_ext.ml.layers.dense_gin_layer import DenseGINLayerP
+from histocartography_ext.ml.layers.constants import (
+    GNN_AGG_MSG,
+    GNN_MSG,
+    GNN_NODE_FEAT_IN,
+    GNN_NODE_FEAT_OUT,
+    REDUCE_TYPES,
+)
 from .mlp import MLP
 
 
