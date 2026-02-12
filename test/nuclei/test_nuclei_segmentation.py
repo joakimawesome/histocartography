@@ -104,5 +104,48 @@ class TestSegmentationFlow(unittest.TestCase):
         self.assertGreater(len(df), 0)
         self.assertIn('centroid_x', df.columns)
 
+    @patch('histocartography_ext.nuclei.segmentation.OpenSlide')
+    @patch('histocartography_ext.nuclei.segmentation.HoverNetInferencer')
+    def test_segment_nuclei_with_tuple_tissue_mask(self, MockInferencer, MockOpenSlide):
+        # Mock Slide
+        slide = MagicMock()
+        slide.level_dimensions = [(200, 200)]
+
+        def read_region(loc, level, size):
+            return MagicMock(convert=lambda x: np.zeros((size[1], size[0], 3), dtype=np.uint8))
+
+        slide.read_region.side_effect = read_region
+        MockOpenSlide.return_value = slide
+
+        # Mock Model
+        inferencer = MockInferencer.return_value
+
+        inst_map = np.zeros((100, 100), dtype=np.uint16)
+        inst_map[10:20, 10:20] = 1
+        centroids = np.array([[10, 10]])
+
+        def predict_batch(tiles):
+            return [(inst_map, centroids)] * len(tiles)
+
+        inferencer.predict_batch.side_effect = predict_batch
+
+        labeled_regions = np.zeros((20, 20), dtype=np.int32)
+        binary_mask = np.ones((20, 20), dtype=np.uint8)
+        tissue_mask = (labeled_regions, binary_mask)
+
+        with patch('histocartography_ext.nuclei.segmentation.get_tissue_mask') as mock_mask:
+            df = segment_nuclei(
+                "dummy.svs",
+                model_path="dummy.pt",
+                tile_size=100,
+                overlap=0,
+                tissue_mask=tissue_mask,
+                batch_size=2,
+            )
+
+        self.assertFalse(mock_mask.called)
+        self.assertFalse(df.empty)
+        self.assertEqual(len(df), 4)
+
 if __name__ == '__main__':
     unittest.main()
