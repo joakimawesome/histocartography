@@ -80,7 +80,7 @@ def run_pipeline(
     
     # Save metadata (config + environment)
     if config.get('reproducibility', {}).get('save_metadata', True):
-        save_metadata(slide_out_dir, config)
+        save_metadata(str(slide_out_dir), config)
     
     log_file = slide_out_dir / "pipeline.log"
     logger = setup_logger(str(log_file))
