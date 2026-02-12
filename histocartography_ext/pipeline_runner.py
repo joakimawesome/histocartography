@@ -155,14 +155,17 @@ def run_pipeline(
         logger.info("Step 3: Building Graph...")
         try:
             # Param config
-            graph_method = config.get('graph_method', 'knn')
+            graph_config = config.get('graph', {})
+            graph_method = graph_config.get('method', 'knn')
             graph_params = {}
             if graph_method == 'knn':
-                graph_params['k'] = config.get('k', 5)
+                graph_params['k'] = graph_config.get('k', 5)
             elif graph_method == 'radius':
-                graph_params['r'] = config.get('r', 50.0)
+                graph_params['r'] = graph_config.get('r', 50.0)
             
-            graph_params['max_edge_length'] = config.get('max_edge_length', None) # Optional pruning
+            graph_params['max_edge_length'] = graph_config.get('max_edge_length', None) # Optional pruning
+            graph_params['remove_isolated_nodes'] = graph_config.get('remove_isolated_nodes', False)
+            graph_params['coord_space'] = graph_config.get('coord_space', 'level-0-pixels')
             
             # Build
             graph_data = build_nuclei_graph(
