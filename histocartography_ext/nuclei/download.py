@@ -1,33 +1,30 @@
 import os
+import gdown
 from pathlib import Path
-from histocartography_ext.utils.io import download_box_link
 
-DATASET_TO_BOX_URL = {
-    "pannuke": "https://ibm.box.com/shared/static/hrt04i3dcv1ph1veoz8x6g8a72u0uw58.pt",
-    "monusac": "https://ibm.box.com/shared/static/u563aoydow9w2kpgw0l8esuklegdtdij.pt",
+# Provide GDrive IDs for checkpoints
+DATASET_TO_GDRIVE_ID = {
+    "pannuke": "1SbSArI3KOOWHxRlxnjchO7_MbWzB4lNR",
+    "monusac": "13qkxDqv7CUqxN-l5CpeFVmc24mDw6CeV",
+    "consep": "1FtoTDDnuZShZmQujjaFSLVJLD5sAh2_P"
 }
 
 def download_checkpoints(download_dir="checkpoints"):
     """
-    Download HoVer-Net checkpoints (pannuke, monusac).
+    Download HoVer-Net checkpoints (pannuke, monusac, consep).
     """
     os.makedirs(download_dir, exist_ok=True)
     
-    for name, url in DATASET_TO_BOX_URL.items():
+    for name, file_id in DATASET_TO_GDRIVE_ID.items():
         fname = os.path.join(download_dir, f"hovernet_{name}.pth")
         print(f"Checking {fname}...")
+        
         if not os.path.exists(fname):
             print(f"Downloading {name} model to {fname}...")
-            # Note: The original code used .pt extension in URL, but saved as target name?
-            # Original code: model_path = ... pretrained_data + ".pt"
-            # User error says: 'checkpoints/hovernet_pannuke.pth'
-            # Let's save as .pth to match user expectation, or .pt and rename.
-            # download_box_link(url, fname)
-            
-            # Use requests directly or use valid utility? 
-            # histocartography_ext.utils.io.download_box_link is available.
             try:
-                download_box_link(url, fname)
+                # gdown handles GDrive authentication/cookie issues usually well
+                url = f'https://drive.google.com/uc?id={file_id}'
+                gdown.download(url, fname, quiet=False)
                 print("Done.")
             except Exception as e:
                 print(f"Failed to download {name}: {e}")
