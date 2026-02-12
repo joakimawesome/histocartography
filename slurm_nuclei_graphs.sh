@@ -24,7 +24,7 @@ MANIFEST="/scratch/11090/joakimchi/Pediatric-Brain-Tumor/data/manifests/v1.0.1/m
 SLIDE_COL="path"
 
 # Output
-OUT_DIR="/scratch/11090/joakimchi/Pediatric-Brain-Tumor/data/wsi_preprocessed"
+OUT_DIR="/scratch/11090/joakimchi/Pediatric-Brain-Tumor/data/wsi_processed"
 
 # Models
 MODEL_PATH="checkpoints/hovernet_pannuke.pth"              # HoVerNet model checkpoint
