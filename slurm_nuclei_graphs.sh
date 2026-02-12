@@ -41,12 +41,12 @@ FEAT_MODE="stats"                                          # "stats" or "gnn"
 # -----------------------------------------------------------------------------
 
 # --- ENVIRONMENT SETUP -------------------------------------------------------
-set -euo pipefail
+set -eo pipefail
 
 echo "=== Job Info ==="
-echo "Job ID: $SLURM_JOB_ID"
-echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
-echo "Node: $HOSTNAME"
+echo "Job ID: ${SLURM_JOB_ID:-N/A}"
+echo "Array Task ID: ${SLURM_ARRAY_TASK_ID:-N/A}"
+echo "Node: ${HOSTNAME:-unknown}"
 echo "Start time: $(date)"
 echo ""
 
