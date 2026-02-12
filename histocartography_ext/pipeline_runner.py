@@ -22,6 +22,7 @@ from .preprocessing.graph_builder_pyg import build_nuclei_graph, save_nuclei_gra
 from .features.gnn import extract_gnn_embeddings, GraphEncoder
 from .features.handcrafted import extract_graph_stats
 from .features.extract import load_graph # Reuse loading logic if available, or just torch.load
+from .utils.reproducibility import set_seeds, capture_environment, save_metadata
 
 def setup_logger(log_file: str) -> logging.Logger:
     """Sets up a logger that writes to a file and console."""
@@ -68,9 +69,17 @@ def run_pipeline(
     if config is None:
         config = {}
 
+    # --- Reproducibility ---
+    seed = config.get('reproducibility', {}).get('seed', 42)
+    set_seeds(seed)
+    
     slide_id = Path(slide_path).stem
     slide_out_dir = Path(output_dir) / slide_id
     slide_out_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save metadata (config + environment)
+    if config.get('reproducibility', {}).get('save_metadata', True):
+        save_metadata(slide_out_dir, config)
     
     log_file = slide_out_dir / "pipeline.log"
     logger = setup_logger(str(log_file))
