@@ -20,11 +20,11 @@
 
 # --- USER CONFIG (edit these) ------------------------------------------------
 # Input
-MANIFEST="scratch/11090/joakimchi/Pediatric-Brain-Tumor/data/manifests/v1.0.1/manifest.csv"                          # Path to manifest CSV (REQUIRED)
-SLIDE_COL="path"                                     # Column name containing slide paths
+MANIFEST="/scratch/11090/joakimchi/Pediatric-Brain-Tumor/data/manifests/v1.0.1/manifest.csv"
+SLIDE_COL="path"
 
 # Output
-OUT_DIR="scratch/11090/joakimchi/Pediatric-Brain-Tumor/data/wsi_preprocessed"                            # Output directory
+OUT_DIR="/scratch/11090/joakimchi/Pediatric-Brain-Tumor/data/wsi_preprocessed"
 
 # Models
 MODEL_PATH="checkpoints/hovernet_pannuke.pth"              # HoVerNet model checkpoint
