@@ -1,0 +1,8 @@
+{
+    "nuclei_count": 10,
+    "tissue_area_mm2": 6.25,
+    "nuclei_density_per_mm2": 1.6,
+    "graph_num_nodes": 10,
+    "graph_num_edges": 6,
+    "graph_avg_degree": 0.6
+}
