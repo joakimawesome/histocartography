@@ -28,20 +28,61 @@ class HoverNetInferencer:
         self.model.eval()
 
     def _load_model(self, model_path: str) -> torch.nn.Module:
-        # Try loading as full model
-        try:
-            model = torch.load(model_path, map_location=self.device)
-        except Exception as e:
-            # Fallback: try loading as state_dict if valid class available
-            # This assumes we can import HoverNet and the architecture matches
-            try:
-                from ..ml.models.hovernet import HoverNet
-                model = HoverNet()
-                state_dict = torch.load(model_path, map_location=self.device)
-                model.load_state_dict(state_dict)
-            except ImportError:
-                raise e
+        # Load the checkpoint
+        checkpoint = torch.load(model_path, map_location=self.device)
         
+        # If it's a full model object
+        if isinstance(checkpoint, torch.nn.Module):
+            return checkpoint
+            
+        # Otherwise, we need to instantiate the model and load state
+        try:
+            from ..ml.models.hovernet import HoverNet
+        except ImportError:
+            # Fallback for standalone script execution
+            try:
+                from histocartography_ext.ml.models.hovernet import HoverNet
+            except ImportError:
+                 # Last resort: try importing relative to this file's package structure logic
+                 # Assuming inference.py is in histocartography_ext/nuclei/
+                 pass
+
+        # We must have HoverNet class now
+        if 'HoverNet' not in locals():
+             # Try one more time with a broader import or assume it handles it
+             from ..ml.models.hovernet import HoverNet
+
+        model = HoverNet()
+        
+        if isinstance(checkpoint, dict):
+            if 'desc' in checkpoint:
+                 # Official HoVer-Net checkpoints usually wrap state dict in 'desc' or just are keys
+                 # Let's check keys.
+                 # Actually, usually keys are 'module.eqn...' or just 'eqn...'
+                 # Check for 'model_state_dict'
+                 pass
+            
+            # Standard wrapper
+            if 'model_state_dict' in checkpoint:
+                state_dict = checkpoint['model_state_dict']
+            else:
+                state_dict = checkpoint
+                
+            # Handle DataParallel prefix 'module.' if present
+            new_state_dict = {}
+            for k, v in state_dict.items():
+                if k.startswith('module.'):
+                    new_state_dict[k[7:]] = v
+                else:
+                    new_state_dict[k] = v
+                    
+            try:
+                model.load_state_dict(new_state_dict)
+            except RuntimeError as e:
+                # If Strict loading fails, maybe try strict=False or warn
+                print(f"Warning: strict loading failed, trying strict=False. Error: {e}")
+                model.load_state_dict(new_state_dict, strict=False)
+                
         return model
 
     def predict_tile(
