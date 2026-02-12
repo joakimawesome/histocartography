@@ -187,7 +187,8 @@ def run_pipeline(
     
     # --- Step 4: Feature Extraction ---
     # Determine feature output name based on config (stats or gnn)
-    feat_mode = config.get('feat_mode', 'gnn')
+    feat_config = config.get('features', {})
+    feat_mode = feat_config.get('mode', 'gnn')
     feat_out_name = "features.npy" # User requested this specific name
     feat_out_path = slide_out_dir / feat_out_name
     
@@ -212,7 +213,7 @@ def run_pipeline(
                 
             elif feat_mode == 'gnn':
                 # Load GNN model if provided
-                gnn_model_path = config.get('gnn_model_path', None)
+                gnn_model_path = feat_config.get('gnn_model_path', None)
                 model = None
                 if gnn_model_path:
                     # Load model logic
