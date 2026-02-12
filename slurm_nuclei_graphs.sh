@@ -101,6 +101,7 @@ CMD="python batch_runner.py \
     --manifest \"$MANIFEST\" \
     --out_dir \"$OUT_DIR\" \
     --model_path \"$MODEL_PATH\" \
+    --slides_root "/scratch/11090/joakimchi/Pediatric-Brain-Tumor"
     --slide_col "$SLIDE_COL" \
     --graph_method $GRAPH_METHOD \
     --k $K_NEIGHBORS \

@@ -3,7 +3,74 @@ import argparse
 import pandas as pd
 import sys
 import logging
-from histocartography_ext.pipeline_runner import run_pipeline
+from pathlib import Path
+from typing import Optional
+
+
+
+def _normalize_manifest_path(p: str) -> str:
+    """Normalize manifest-provided paths across OSes.
+
+    The project manifest may contain Windows-style separators (e.g. "data\\wsi_raw\\WSI_000032.svs").
+    On Linux this will be treated as a literal filename (backslash is not a separator),
+    which makes OpenSlide fail with "Unsupported or missing image file".
+    """
+    p = (p or "").strip()
+    if os.name != "nt" and "\\" in p:
+        p = p.replace("\\", "/")
+    return p
+
+
+def _guess_project_root_from_manifest(manifest_path: str) -> Optional[Path]:
+    """Best-effort guess of the dataset/project root from a manifest location.
+
+    For example:
+      <root>/data/manifests/<version>/manifest.csv  -> returns <root>
+    """
+    try:
+        mp = Path(manifest_path).resolve()
+    except Exception:
+        return None
+
+    for parent in mp.parents:
+        data_dir = parent / "data"
+        manifests_dir = data_dir / "manifests"
+        if data_dir.is_dir() and manifests_dir.is_dir():
+            return parent
+    return None
+
+
+def _resolve_slide_path(slide_path: str, manifest_path: str, slides_root: Optional[str]) -> str:
+    """Resolve slide_path to an existing path when possible."""
+    slide_path = _normalize_manifest_path(slide_path)
+
+    # Already absolute?
+    try:
+        sp = Path(slide_path)
+        if sp.is_absolute():
+            return str(sp)
+        if sp.exists():
+            return str(sp)
+    except Exception:
+        # If pathlib can't parse, just return as-is.
+        return slide_path
+
+    # Resolve relative to explicit slides_root if provided.
+    if slides_root:
+        candidate = Path(slides_root) / slide_path
+        if candidate.exists():
+            return str(candidate)
+
+    # Best-effort: infer root from manifest location.
+    root = _guess_project_root_from_manifest(manifest_path)
+    if root is not None:
+        candidate = root / slide_path
+        if candidate.exists():
+            return str(candidate)
+
+    # Give up; caller will surface the error from downstream.
+    return slide_path
+
 
 def main():
     parser = argparse.ArgumentParser(description="Batch runner for histology pipeline.")
@@ -12,6 +79,7 @@ def main():
     parser.add_argument("--model_path", type=str, required=True, help="Path to Nuclei Segmentation Model Checkpoint.")
     parser.add_argument("--gnn_model_path", type=str, default=None, help="Path to GNN Model Checkpoint (optional).")
     parser.add_argument("--slide_col", type=str, default="slide_path", help="Column name for slide path in manifest.")
+    parser.add_argument("--slides_root", type=str, default=None, help="Optional root directory to resolve relative slide paths.")
     parser.add_argument("--skip_errors", action="store_true", help="Continue processing even if a slide fails.")
     parser.add_argument("--slurm_array_idx", type=int, default=None, help="SLURM array index (0-based). Overrides SLURM_ARRAY_TASK_ID.")
     parser.add_argument("--force_rerun", action="store_true", help="Force rerun of all steps.")
@@ -23,6 +91,9 @@ def main():
     parser.add_argument("--feat_mode", type=str, default="gnn", choices=["stats", "gnn"], help="Feature extraction mode.")
     
     args = parser.parse_args()
+    
+    # Import here so `--help` (and other argparse errors) doesn't require full pipeline deps.
+    from histocartography_ext.pipeline_runner import run_pipeline
     
     # Setup global logging
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,7 +110,11 @@ def main():
         logger.error(f"Column '{args.slide_col}' not found in manifest. Available: {list(df.columns)}")
         sys.exit(1)
         
-    slides = df[args.slide_col].tolist()
+    slides_raw = df[args.slide_col].tolist()
+    slides = [
+        _resolve_slide_path(p, manifest_path=args.manifest, slides_root=args.slides_root)
+        for p in slides_raw
+    ]
     
     # Handle SLURM Array
     task_id = args.slurm_array_idx
@@ -73,6 +148,8 @@ def main():
     }
     
     for slide_path in slides_to_process:
+        # Helpful diagnostic when the manifest contains Windows separators or relative paths.
+        logger.info(f"Processing slide path: {slide_path}")
         try:
             run_pipeline(
                 slide_path=slide_path,
