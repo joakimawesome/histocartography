@@ -33,7 +33,9 @@ dependencies = [
     "scikit-learn",
     "scipy",
     "seaborn",
-    "torch_geometric"
+    "torch_geometric",
+    "openslide-python",
+    "pyarrow"
 ]
 
 [project.urls]

@@ -18,3 +18,5 @@ seaborn
 tqdm
 shapely
 torch_geometric
+openslide-python
+pyarrow
