@@ -132,9 +132,9 @@ def run_pipeline(
                 slide_path=slide_path,
                 tissue_mask=tissue_mask, # It handles scaling
                 model_path=model_path,
-                device=config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu'),
-                batch_size=config.get('batch_size', 4),
-                min_nucleus_area=config.get('min_nucleus_area', 10)
+                device=config.get('segmentation', {}).get('device', 'cuda' if torch.cuda.is_available() else 'cpu'),
+                batch_size=config.get('segmentation', {}).get('batch_size', 16),
+                min_nucleus_area=config.get('segmentation', {}).get('min_nucleus_area', 10)
             )
             
             # Save nuclei table
