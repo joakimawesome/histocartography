@@ -141,7 +141,56 @@ def main():
     parser.add_argument("--graph_method", type=str, default="knn", choices=["knn", "radius"], help="Graph construction method.")
     parser.add_argument("--k", type=int, default=5, help="k for kNN.")
     parser.add_argument("--r", type=float, default=50.0, help="r for radius graph.")
-    parser.add_argument("--feat_mode", type=str, default="gnn", choices=["stats", "gnn"], help="Feature extraction mode.")
+    parser.add_argument("--feat_mode", type=str, default="handcrafted", choices=["handcrafted", "deep", "stats", "gnn"], help="Feature extraction mode.")
+    parser.add_argument("--feat_architecture", type=str, default="resnet50", help="CNN architecture for deep features (e.g. resnet18, resnet50).")
+    parser.add_argument("--feat_patch_size", type=int, default=72, help="Patch size for deep features.")
+    parser.add_argument("--feat_resize_size", type=int, default=None, help="Resize patches before CNN (optional).")
+
+    # Segmentation configs (important for GPU memory on local machines)
+    parser.add_argument(
+        "--seg_device",
+        type=str,
+        default=None,
+        choices=["cuda", "cpu"],
+        help="Override segmentation device. If omitted, auto-selects cuda when available.",
+    )
+    parser.add_argument(
+        "--seg_batch_size",
+        type=int,
+        default=None,
+        help="Batch size for HoVer-Net inference during segmentation. Lower this if you hit CUDA OOM.",
+    )
+    parser.add_argument(
+        "--seg_tile_size",
+        type=int,
+        default=None,
+        help="Tile size (pixels) used for WSI segmentation. Lower this if you hit CUDA OOM.",
+    )
+    parser.add_argument(
+        "--seg_overlap",
+        type=int,
+        default=None,
+        help="Tile overlap (pixels) used for WSI segmentation.",
+    )
+    parser.add_argument(
+        "--seg_level",
+        type=int,
+        default=None,
+        help="WSI pyramid level to segment (0 = full resolution).",
+    )
+    parser.add_argument(
+        "--seg_min_nucleus_area",
+        type=int,
+        default=None,
+        help="Filter out nuclei smaller than this area (in pixels).",
+    )
+    parser.add_argument(
+        "--stitch_mode",
+        type=str,
+        default="global",
+        choices=["global", "tile"],
+        help="Stitching strategy: 'global' (TACC, faithful to original) or 'tile' (low-RAM local).",
+    )
     
     args = parser.parse_args()
     
@@ -201,9 +250,30 @@ def main():
         'features': {
             'mode': args.feat_mode,
             'gnn_model_path': args.gnn_model_path,
+            'architecture': args.feat_architecture,
+            'patch_size': args.feat_patch_size,
+            'resize_size': args.feat_resize_size,
         },
-        # Add other potential configs here
     }
+
+    seg_config = {}
+    if args.seg_device is not None:
+        seg_config["device"] = args.seg_device
+    if args.seg_batch_size is not None:
+        seg_config["batch_size"] = args.seg_batch_size
+    if args.seg_tile_size is not None:
+        seg_config["tile_size"] = args.seg_tile_size
+    if args.seg_overlap is not None:
+        seg_config["overlap"] = args.seg_overlap
+    if args.seg_level is not None:
+        seg_config["level"] = args.seg_level
+    if args.seg_min_nucleus_area is not None:
+        seg_config["min_nucleus_area"] = args.seg_min_nucleus_area
+    if seg_config:
+        config["segmentation"] = seg_config
+
+    # Stitch mode
+    config.setdefault("segmentation", {})["stitch_mode"] = args.stitch_mode
 
     # Group all outputs under a run-specific subdirectory to avoid cluttering --out_dir
     run_name = _sanitize_run_name(args.run_name) if args.run_name else _default_run_name(args)
@@ -227,7 +297,18 @@ def main():
             fail_count += 1
             if not args.skip_errors:
                 sys.exit(1)
-                
+        finally:
+            # Helpful when running long serial jobs on a single GPU:
+            # - avoids allocator fragmentation across slides
+            # - releases unused reserved blocks back to the driver
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+                 
     logger.info(f"Batch processing complete. Success: {success_count}, Failed: {fail_count}")
 
 if __name__ == "__main__":
