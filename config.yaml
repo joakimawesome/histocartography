@@ -1,52 +1,66 @@
-# Histocartography Pipeline Configuration
+# Histocartography Pipeline Configuration (v2 — aligned with original repo)
 
 # -----------------------------------------------------------------------------
 # Reproducibility
 # -----------------------------------------------------------------------------
 reproducibility:
-  seed: 42                           # Random seed for python, numpy, torch
-  output_dir: "./output"             # Base directory for all outputs
-  save_metadata: true                # Save git commit and pip freeze to metadata.json
+  seed: 42
+  output_dir: "./output"
+  save_metadata: true
 
 # -----------------------------------------------------------------------------
 # Segmentation (HoVer-Net)
 # -----------------------------------------------------------------------------
 segmentation:
-  model_path: null                   # Path to custom checkpoint. If null, uses pretrained
+  model_path: null                   # Path to HoVer-Net checkpoint (full model object)
   pretrained_data: "pannuke"         # 'pannuke' or 'monusac' if model_path is null
   batch_size: 16                     # Inference batch size (adjust for GPU memory)
+  tile_size: 256                     # HoVer-Net native input size
+  overlap: 0                         # Tile overlap (only used in tile mode)
+  level: 0                           # WSI pyramid level (0 = full resolution)
   min_nucleus_area: 10               # Minimum area in pixels to keep a nucleus
   device: "cuda"                     # 'cuda' or 'cpu'
+  stitch_mode: "global"              # 'global' (TACC, faithful) or 'tile' (local)
 
 # -----------------------------------------------------------------------------
 # Graph Construction
 # -----------------------------------------------------------------------------
 graph:
-  method: "knn"                      # 'knn' or 'radius' or 'delaunay'
+  method: "knn"                      # 'knn' or 'radius'
   k: 5                               # Number of neighbors (for kNN)
   r: 50.0                            # Radius in pixels (for radius graph)
-  max_edge_length: null              # Optional: Prune edges longer than this (pixels)
-  remove_isolated_nodes: false       # Remove nodes with no edges
-  coord_space: "level-0-pixels"      # Coordinate space of nodes 
+  max_edge_length: null              # Optional: prune edges longer than this
+  remove_isolated_nodes: false
+  coord_space: "level-0-pixels"
 
 # -----------------------------------------------------------------------------
 # Feature Extraction
 # -----------------------------------------------------------------------------
 features:
-  mode: "gnn"                        # 'gnn' (deep embeddings) or 'stats' (handcrafted)
-  
-  # Options for 'gnn' mode
-  gnn_model_path: null               # Path to trained GraphEncoder state dict. If null, random init.
-  gnn_architecture: "GIN"            # Architecture type (implemented: GraphEncoder)
-  
-  # Options for 'stats' mode
-  handcrafted_features:              # List of feature groups to extract
-    - "shape"
-    - "texture"
-    - "crowdedness"
+  mode: "handcrafted"                # 'handcrafted' | 'deep' | 'stats' | 'gnn'
+
+  # --- Per-node: handcrafted (24-dim, faithful to original) ---
+  # No additional config needed; always extracts:
+  #   16 shape + 6 GLCM texture + 2 crowdedness
+
+  # --- Per-node: deep (CNN embeddings) ---
+  architecture: "resnet50"           # Any torchvision model (resnet18, resnet50, etc.)
+  patch_size: 72                     # Patch size around each nucleus
+  resize_size: null                  # Resize patches before CNN (null = use patch_size)
+  stride: null                       # Stride for multi-patch (null = patch_size)
+  downsample_factor: 1               # Downsample image before patch extraction
+  batch_size: 32                     # CNN inference batch size
+  with_instance_masking: false       # Mask non-nucleus pixels in patches
+
+  # --- Per-graph: gnn ---
+  gnn_model_path: null               # Path to trained GraphEncoder (full model)
+  gnn_architecture: "GIN"
+
+  # --- Per-graph: stats ---
+  # No config needed; computes degree, clustering, etc.
 
 # -----------------------------------------------------------------------------
 # Slide Processing
 # -----------------------------------------------------------------------------
 pipeline:
-  force_rerun: false                 # Force overwrite of existing steps
+  force_rerun: false

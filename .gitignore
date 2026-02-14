@@ -119,3 +119,4 @@ checkpoints
 .travis.yml
 
 docs/
+logs/
