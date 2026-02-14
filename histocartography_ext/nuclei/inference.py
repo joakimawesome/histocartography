@@ -59,7 +59,7 @@ class HoverNetInferencer:
     # Model loading – full model object only (matches original repo)
     # ------------------------------------------------------------------
     def _load_model(self, model_path: str) -> torch.nn.Module:
-        model = torch.load(model_path, map_location=self.device)
+        model = torch.load(model_path, map_location=self.device, weights_only=False)
         if not isinstance(model, torch.nn.Module):
             raise TypeError(
                 f"Expected a full model object at {model_path}, "
