@@ -1,8 +1,35 @@
 import torch
 import numpy as np
 import cv2
+import warnings
 from typing import Optional, Tuple, List, Union
 from .postprocess import process_instance
+
+
+def _resolve_device(device: Union[str, torch.device]) -> torch.device:
+    """Resolve a user-provided device to a valid torch.device.
+
+    - Accepts "auto" to mean "cuda if available else cpu".
+    - If CUDA is requested but not available, falls back to CPU instead of
+      crashing during torch.load / tensor.to().
+    """
+    if device is None:
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if isinstance(device, str) and device.lower() == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    dev = device if isinstance(device, torch.device) else torch.device(str(device))
+    if dev.type == "cuda" and not torch.cuda.is_available():
+        warnings.warn(
+            f"CUDA device requested ({device!r}) but torch.cuda.is_available() is False; "
+            "falling back to CPU.",
+            category=RuntimeWarning,
+            stacklevel=2,
+        )
+        return torch.device("cpu")
+
+    return dev
 
 
 class HoverNetInferencer:
@@ -19,10 +46,10 @@ class HoverNetInferencer:
     def __init__(
         self,
         model_path: str,
-        device: str = "cuda" if torch.cuda.is_available() else "cpu",
+        device: Union[str, torch.device] = "cuda" if torch.cuda.is_available() else "cpu",
         batch_size: int = 4,
     ):
-        self.device = device
+        self.device = _resolve_device(device)
         self.batch_size = batch_size
         self.model = self._load_model(model_path)
         self.model.to(self.device)
