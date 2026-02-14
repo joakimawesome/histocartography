@@ -63,8 +63,9 @@ class BaseModel(Module):
             url=MODEL_NAME_TO_URL[model_name],
             out_fname=os.path.join(checkpoint_path, model_name)
         )
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.load_state_dict(
-            torch.load(os.path.join(checkpoint_path, model_name))
+            torch.load(os.path.join(checkpoint_path, model_name), map_location=device)
         )
 
     @abstractmethod

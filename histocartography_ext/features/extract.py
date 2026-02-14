@@ -54,7 +54,8 @@ def main():
             # or assume the whole model was saved.
             # Let's try loading the whole object first, or fallback.
             try:
-                loaded = torch.load(args.model_path)
+                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                loaded = torch.load(args.model_path, map_location=device)
                 if isinstance(loaded, dict):
                      # It's a state dict, we need to know arch.
                      # For now, let's warn and use random or fail.

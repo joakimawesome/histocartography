@@ -251,7 +251,8 @@ def run_pipeline(
                 gnn_model_path = feat_config.get('gnn_model_path', None)
                 model = None
                 if gnn_model_path:
-                    model = torch.load(gnn_model_path)
+                    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                    model = torch.load(gnn_model_path, map_location=device)
                     if not isinstance(model, torch.nn.Module):
                         raise TypeError("GNN model must be a full model object")
                     model.eval()

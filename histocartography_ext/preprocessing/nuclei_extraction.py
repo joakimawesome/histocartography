@@ -85,7 +85,7 @@ class NucleiExtractor(PipelineStep):
 
     def _load_model_from_path(self, model_path):
         """Load nuclei extraction model from provided model path."""
-        self.model = torch.load(model_path)
+        self.model = torch.load(model_path, map_location=self.device)
 
     def _process(  # type: ignore[override]
         self,
