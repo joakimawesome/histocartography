@@ -1,6 +1,7 @@
 import os
 import logging
 import time
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Optional, Dict, Any
 import numpy as np
@@ -64,6 +65,17 @@ def run_pipeline(
     """
     if config is None:
         config = {}
+    elif hasattr(config, "to_dict"):
+        config = config.to_dict()
+    elif is_dataclass(config):
+        config = asdict(config)
+    elif not isinstance(config, dict):
+        raise TypeError(f"Unsupported config type: {type(config).__name__}")
+
+    if isinstance(config, dict):
+        if "features" not in config and "feat_mode" in config:
+            config = dict(config)
+            config["features"] = {"mode": config.get("feat_mode")}
 
     # --- Reproducibility ---
     seed = config.get('reproducibility', {}).get('seed', 42)
@@ -191,19 +203,20 @@ def run_pipeline(
             if graph_data is None:
                 graph_data = torch.load(graph_out_path, weights_only=False)
 
-            if feat_mode == 'handcrafted':
-                # Per-node: 24 handcrafted features (faithful to original)
+            if feat_mode in ("handcrafted", "deep", "hybrid"):
                 # Need the slide image at the same resolution as the instance map
                 import openslide
+
                 slide = openslide.OpenSlide(slide_path)
                 seg_level = config.get('segmentation', {}).get('level', 0)
                 w, h = slide.level_dimensions[seg_level]
-                # Read the full image at the segmentation level
                 full_image = np.array(
                     slide.read_region((0, 0), seg_level, (w, h)).convert("RGB")
                 )
                 slide.close()
 
+            if feat_mode == 'handcrafted':
+                # Per-node: 24 handcrafted features (faithful to original)
                 node_features = extract_handcrafted_node_features(
                     full_image, instance_map
                 )
@@ -215,15 +228,6 @@ def run_pipeline(
 
             elif feat_mode == 'deep':
                 # Per-node: CNN embeddings (faithful to original)
-                import openslide
-                slide = openslide.OpenSlide(slide_path)
-                seg_level = config.get('segmentation', {}).get('level', 0)
-                w, h = slide.level_dimensions[seg_level]
-                full_image = np.array(
-                    slide.read_region((0, 0), seg_level, (w, h)).convert("RGB")
-                )
-                slide.close()
-
                 extractor = DeepNodeFeatureExtractor(
                     architecture=feat_config.get('architecture', 'resnet50'),
                     patch_size=feat_config.get('patch_size', 72),
@@ -231,7 +235,10 @@ def run_pipeline(
                     stride=feat_config.get('stride', None),
                     downsample_factor=feat_config.get('downsample_factor', 1),
                     batch_size=feat_config.get('batch_size', 32),
+                    num_workers=feat_config.get('num_workers', 0),
+                    pin_memory=feat_config.get('pin_memory', False),
                     with_instance_masking=feat_config.get('with_instance_masking', False),
+                    extraction_layer=feat_config.get('extraction_layer', None),
                     verbose=True,
                 )
                 node_features = extractor.extract(full_image, instance_map)
@@ -239,6 +246,36 @@ def run_pipeline(
                 save_nuclei_graph(graph_data, str(graph_out_path))
                 torch.save(node_features, feat_out_path)
                 logger.info(f"Deep features: shape {node_features.shape}")
+
+            elif feat_mode == 'hybrid':
+                # Per-node: handcrafted + CNN embeddings (concatenated)
+                handcrafted = extract_handcrafted_node_features(
+                    full_image, instance_map
+                )
+                extractor = DeepNodeFeatureExtractor(
+                    architecture=feat_config.get('architecture', 'resnet50'),
+                    patch_size=feat_config.get('patch_size', 72),
+                    resize_size=feat_config.get('resize_size', None),
+                    stride=feat_config.get('stride', None),
+                    downsample_factor=feat_config.get('downsample_factor', 1),
+                    batch_size=feat_config.get('batch_size', 32),
+                    num_workers=feat_config.get('num_workers', 0),
+                    pin_memory=feat_config.get('pin_memory', False),
+                    with_instance_masking=feat_config.get('with_instance_masking', False),
+                    extraction_layer=feat_config.get('extraction_layer', None),
+                    verbose=True,
+                )
+                deep = extractor.extract(full_image, instance_map)
+                node_features = torch.cat([handcrafted, deep], dim=1)
+                graph_data.x = node_features
+                save_nuclei_graph(graph_data, str(graph_out_path))
+                torch.save(node_features, feat_out_path)
+                logger.info(
+                    "Hybrid features: handcrafted %s + deep %s -> %s",
+                    tuple(handcrafted.shape),
+                    tuple(deep.shape),
+                    tuple(node_features.shape),
+                )
 
             elif feat_mode == 'graph_stats':
                 # Per-graph: graph-level statistics (local extension)
