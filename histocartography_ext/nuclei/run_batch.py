@@ -32,7 +32,7 @@ def process_slide(
             return f"Skipped {slide_name} (exists)"
 
         # Run segmentation
-        df = segment_nuclei(
+        _instance_map, df = segment_nuclei(
             slide_path=slide_path,
             level=level,
             tile_size=tile_size,
