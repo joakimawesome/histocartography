@@ -5,6 +5,12 @@ import sys
 import logging
 from pathlib import Path
 from typing import Optional
+from histocartography_ext.pipeline_config import (
+    PipelineConfig,
+    SegmentationConfig,
+    GraphConfig,
+    FeatureConfig,
+)
 
 
 
@@ -84,6 +90,49 @@ def _default_run_name(args: argparse.Namespace) -> str:
     return _sanitize_run_name("__".join(parts))
 
 
+def build_pipeline_config(args: argparse.Namespace) -> PipelineConfig:
+    graph = GraphConfig(
+        method=args.graph_method,
+        k=args.k,
+        r=args.r,
+    )
+
+    features = FeatureConfig(
+        mode=args.feat_mode,
+        architecture=args.feat_architecture,
+        patch_size=args.feat_patch_size,
+        resize_size=args.feat_resize_size,
+        gnn_model_path=args.gnn_model_path,
+    )
+    if args.feat_batch_size is not None:
+        features.batch_size = args.feat_batch_size
+    if args.feat_num_workers is not None:
+        features.num_workers = args.feat_num_workers
+    if args.feat_pin_memory is not None:
+        features.pin_memory = args.feat_pin_memory
+
+    segmentation = SegmentationConfig()
+    if args.seg_device is not None:
+        segmentation.device = args.seg_device
+    if args.seg_batch_size is not None:
+        segmentation.batch_size = args.seg_batch_size
+    if args.seg_tile_size is not None:
+        segmentation.tile_size = args.seg_tile_size
+    if args.seg_overlap is not None:
+        segmentation.overlap = args.seg_overlap
+    if args.seg_level is not None:
+        segmentation.level = args.seg_level
+    if args.seg_min_nucleus_area is not None:
+        segmentation.min_nucleus_area = args.seg_min_nucleus_area
+    segmentation.stitch_mode = args.stitch_mode
+
+    return PipelineConfig(
+        segmentation=segmentation,
+        graph=graph,
+        features=features,
+    )
+
+
 def _resolve_slide_path(slide_path: str, manifest_path: str, slides_root: Optional[str]) -> str:
     """Resolve slide_path to an existing path when possible."""
     slide_path = _normalize_manifest_path(slide_path)
@@ -141,10 +190,34 @@ def main():
     parser.add_argument("--graph_method", type=str, default="knn", choices=["knn", "radius"], help="Graph construction method.")
     parser.add_argument("--k", type=int, default=5, help="k for kNN.")
     parser.add_argument("--r", type=float, default=50.0, help="r for radius graph.")
-    parser.add_argument("--feat_mode", type=str, default="handcrafted", choices=["handcrafted", "deep", "stats", "gnn"], help="Feature extraction mode.")
+    parser.add_argument(
+        "--feat_mode",
+        type=str,
+        default="handcrafted",
+        choices=["handcrafted", "deep", "hybrid", "stats", "gnn"],
+        help="Feature extraction mode.",
+    )
     parser.add_argument("--feat_architecture", type=str, default="resnet50", help="CNN architecture for deep features (e.g. resnet18, resnet50).")
     parser.add_argument("--feat_patch_size", type=int, default=72, help="Patch size for deep features.")
     parser.add_argument("--feat_resize_size", type=int, default=None, help="Resize patches before CNN (optional).")
+    parser.add_argument(
+        "--feat_batch_size",
+        type=int,
+        default=None,
+        help="Batch size for deep or hybrid feature extraction.",
+    )
+    parser.add_argument(
+        "--feat_num_workers",
+        type=int,
+        default=None,
+        help="DataLoader workers for deep or hybrid feature extraction.",
+    )
+    parser.add_argument(
+        "--feat_pin_memory",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable DataLoader pin_memory for deep or hybrid feature extraction.",
+    )
 
     # Segmentation configs (important for GPU memory on local machines)
     parser.add_argument(
@@ -241,39 +314,7 @@ def main():
     fail_count = 0
     
     # Config structure expected by histocartography_ext.pipeline_runner
-    config = {
-        'graph': {
-            'method': args.graph_method,
-            'k': args.k,
-            'r': args.r,
-        },
-        'features': {
-            'mode': args.feat_mode,
-            'gnn_model_path': args.gnn_model_path,
-            'architecture': args.feat_architecture,
-            'patch_size': args.feat_patch_size,
-            'resize_size': args.feat_resize_size,
-        },
-    }
-
-    seg_config = {}
-    if args.seg_device is not None:
-        seg_config["device"] = args.seg_device
-    if args.seg_batch_size is not None:
-        seg_config["batch_size"] = args.seg_batch_size
-    if args.seg_tile_size is not None:
-        seg_config["tile_size"] = args.seg_tile_size
-    if args.seg_overlap is not None:
-        seg_config["overlap"] = args.seg_overlap
-    if args.seg_level is not None:
-        seg_config["level"] = args.seg_level
-    if args.seg_min_nucleus_area is not None:
-        seg_config["min_nucleus_area"] = args.seg_min_nucleus_area
-    if seg_config:
-        config["segmentation"] = seg_config
-
-    # Stitch mode
-    config.setdefault("segmentation", {})["stitch_mode"] = args.stitch_mode
+    config = build_pipeline_config(args)
 
     # Group all outputs under a run-specific subdirectory to avoid cluttering --out_dir
     run_name = _sanitize_run_name(args.run_name) if args.run_name else _default_run_name(args)
