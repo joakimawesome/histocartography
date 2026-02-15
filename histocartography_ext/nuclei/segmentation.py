@@ -75,6 +75,7 @@ def segment_nuclei(
     if model_path is None:
         raise ValueError("model_path must be provided")
 
+    logger = logging.getLogger(__name__)
     inferencer = HoverNetInferencer(model_path, device=device, batch_size=batch_size)
 
     slide = OpenSlide(slide_path)
@@ -85,6 +86,23 @@ def segment_nuclei(
         tissue_mask = _resolve_tissue_mask(slide, tissue_mask, w, h)
         mask_scale_x = w / tissue_mask.shape[1]
         mask_scale_y = h / tissue_mask.shape[0]
+
+        logger.info(
+            "Segmentation config: stitch_mode=%s level=%s tile=%s overlap=%s batch=%s device=%s",
+            stitch_mode,
+            level,
+            tile_size,
+            overlap,
+            batch_size,
+            device,
+        )
+        logger.info(
+            "Slide level dims: %s x %s; tissue mask: %s x %s",
+            w,
+            h,
+            tissue_mask.shape[1],
+            tissue_mask.shape[0],
+        )
 
         # ---- Dispatch to stitching strategy ----
         if stitch_mode == "global":
