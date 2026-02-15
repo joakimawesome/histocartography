@@ -271,6 +271,7 @@ def _stitch_tile(
     avoids duplicate labels across overlaps while still allowing us to paint
     full masks.
     """
+    logger = logging.getLogger(__name__)
     instance_map = np.zeros((h, w), dtype=np.uint32)
     records: List[Dict[str, Any]] = []
     next_label: int = 1
@@ -282,10 +283,13 @@ def _stitch_tile(
     total_tiles = ((w + step - 1) // step) * ((h + step - 1) // step)
     iterator = tile_iterator(w, h, tile_size, overlap)
 
+    processed = 0
+    skipped = 0
     for x, y, tw, th in tqdm(iterator, total=total_tiles, desc="Processing tiles (tile mode)"):
         if not _tile_has_tissue(
             x, y, tw, th, tissue_mask, mask_scale_x, mask_scale_y
         ):
+            skipped += 1
             continue
 
         tile = slide.read_region((x, y), level, (tw, th))
@@ -293,6 +297,9 @@ def _stitch_tile(
 
         tile_buffer.append(tile)
         coord_buffer.append((x, y, tw, th))
+        processed += 1
+        if processed % 500 == 0:
+            logger.info("Tile stitch progress: processed=%s skipped=%s", processed, skipped)
 
         if len(tile_buffer) >= batch_size:
             next_label = _stitch_tile_buffer(
@@ -311,6 +318,7 @@ def _stitch_tile(
     # Filter small nuclei at the stitching stage to keep instance IDs stable.
     # (If we drop later, we'd need to relabel the instance map.)
     nuclei_df = pd.DataFrame.from_records(records)
+    logger.info("Tile stitch complete: processed=%s skipped=%s", processed, skipped)
     return instance_map, nuclei_df
 
 
