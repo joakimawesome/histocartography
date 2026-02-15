@@ -16,6 +16,7 @@ Supports two stitching strategies controlled by ``stitch_mode``:
 """
 
 import math
+import logging
 import numpy as np
 import pandas as pd
 from openslide import OpenSlide
