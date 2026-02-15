@@ -142,6 +142,7 @@ def _stitch_global(
     Stitch raw HoVer-Net outputs into a global prediction tensor of
     shape ``(H, W, 3)`` and run ``process_instance()`` once.
     """
+    logger = logging.getLogger(__name__)
     # Crop work to tissue bounding box (with margin) to:
     #   - drastically reduce RAM (avoid allocating full-slide pred_map)
     #   - avoid iterating tiles over large blank backgrounds
@@ -169,6 +170,16 @@ def _stitch_global(
     tiles_x = (max(0, x1a - x0a) + step - 1) // step
     tiles_y = (max(0, y1a - y0a) + step - 1) // step
     total_tiles = tiles_x * tiles_y
+    logger.info(
+        "Global stitch crop: x=[%s,%s) y=[%s,%s) pred_map=%sx%s tiles=%s",
+        x0a,
+        x1a,
+        y0a,
+        y1a,
+        pred_map.shape[1],
+        pred_map.shape[0],
+        total_tiles,
+    )
 
     def _iter_crop_tiles():
         for y in range(y0a, y1a, step):
@@ -177,10 +188,13 @@ def _stitch_global(
                 th = min(tile_size, h - y)
                 yield x, y, tw, th
 
+    processed = 0
+    skipped = 0
     for x, y, tw, th in tqdm(_iter_crop_tiles(), total=total_tiles, desc="Inferencing tiles"):
         if not _tile_has_tissue(
             x, y, tw, th, tissue_mask, mask_scale_x, mask_scale_y
         ):
+            skipped += 1
             continue
 
         tile = slide.read_region((x, y), level, (tw, th))
@@ -188,6 +202,9 @@ def _stitch_global(
 
         tile_buffer.append(tile)
         coord_buffer.append((x, y, tw, th))
+        processed += 1
+        if processed % 500 == 0:
+            logger.info("Global stitch progress: processed=%s skipped=%s", processed, skipped)
 
         if len(tile_buffer) >= batch_size:
             _flush_raw_buffer(inferencer, tile_buffer, coord_buffer, pred_map, x_offset=x0a, y_offset=y0a)
@@ -208,6 +225,7 @@ def _stitch_global(
     inst_crop = process_instance(pred_map, output_dtype="uint32")
     instance_map = np.zeros((h, w), dtype=np.uint32)
     instance_map[y0a:y1a, x0a:x1a] = inst_crop
+    logger.info("Global stitch complete: processed=%s skipped=%s", processed, skipped)
     return instance_map
 
 
