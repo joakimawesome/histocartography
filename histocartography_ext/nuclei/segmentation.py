@@ -9,15 +9,15 @@ Supports two stitching strategies controlled by ``stitch_mode``:
   artefacts.  Requires enough RAM to hold the full prediction tensor
   (approx ``H * W * 3 * 4`` bytes in float32).
 
-* ``"tile"`` – post-process each tile independently and de-duplicate
-  nuclei at overlap boundaries via a spatial KD-tree.  Useful for local
-  testing when RAM is limited.
+* ``"tile"`` – post-process each tile independently and stitch per-tile
+  instance maps into a global canvas using centroid-based ownership in
+  overlap regions. This avoids running watershed on the full-slide tensor
+  (which scales with the entire WSI area, including blank background).
 """
 
-import os
+import math
 import numpy as np
 import pandas as pd
-import openslide
 from openslide import OpenSlide
 from tqdm import tqdm
 from typing import Optional, List, Dict, Any, Tuple
@@ -74,43 +74,38 @@ def segment_nuclei(
     if model_path is None:
         raise ValueError("model_path must be provided")
 
-    inferencer = HoverNetInferencer(
-        model_path, device=device, batch_size=batch_size
-    )
+    inferencer = HoverNetInferencer(model_path, device=device, batch_size=batch_size)
 
     slide = OpenSlide(slide_path)
-    w, h = slide.level_dimensions[level]
+    try:
+        w, h = slide.level_dimensions[level]
 
-    # ---- Tissue mask ----
-    tissue_mask = _resolve_tissue_mask(slide, tissue_mask, w, h)
-    mask_scale_x = w / tissue_mask.shape[1]
-    mask_scale_y = h / tissue_mask.shape[0]
+        # ---- Tissue mask ----
+        tissue_mask = _resolve_tissue_mask(slide, tissue_mask, w, h)
+        mask_scale_x = w / tissue_mask.shape[1]
+        mask_scale_y = h / tissue_mask.shape[0]
 
-    # ---- Dispatch to stitching strategy ----
-    if stitch_mode == "global":
-        instance_map = _stitch_global(
-            slide, level, w, h, tile_size,
-            tissue_mask, mask_scale_x, mask_scale_y,
-            inferencer, batch_size,
-        )
-    elif stitch_mode == "tile":
-        instance_map = _stitch_tile(
-            slide, level, w, h, tile_size, overlap,
-            tissue_mask, mask_scale_x, mask_scale_y,
-            inferencer, batch_size,
-        )
-    else:
+        # ---- Dispatch to stitching strategy ----
+        if stitch_mode == "global":
+            instance_map = _stitch_global(
+                slide, level, w, h, tile_size, tissue_mask, mask_scale_x, mask_scale_y, inferencer, batch_size
+            )
+            nuclei_df = _instance_map_to_df(instance_map, min_nucleus_area)
+            return instance_map, nuclei_df
+
+        if stitch_mode == "tile":
+            instance_map, nuclei_df = _stitch_tile(
+                slide, level, w, h, tile_size, overlap, tissue_mask, mask_scale_x, mask_scale_y, inferencer, batch_size,
+                min_nucleus_area=min_nucleus_area
+            )
+            return instance_map, nuclei_df
+
         raise ValueError(f"Unknown stitch_mode: {stitch_mode!r}")
-
-    # ---- Extract per-nucleus properties from global instance map ----
-    nuclei_df = _instance_map_to_df(instance_map, min_nucleus_area)
-
-    return instance_map, nuclei_df
-
-
-# ======================================================================
-# Global stitching (faithful to original)
-# ======================================================================
+    finally:
+        try:
+            slide.close()
+        except Exception:
+            pass
 
 def _stitch_global(
     slide: OpenSlide,
@@ -128,15 +123,42 @@ def _stitch_global(
     Stitch raw HoVer-Net outputs into a global prediction tensor of
     shape ``(H, W, 3)`` and run ``process_instance()`` once.
     """
-    pred_map = np.zeros((h, w, 3), dtype=np.float32)
+    # Crop work to tissue bounding box (with margin) to:
+    #   - drastically reduce RAM (avoid allocating full-slide pred_map)
+    #   - avoid iterating tiles over large blank backgrounds
+    y0, y1, x0, x1 = _tissue_bbox_from_mask(
+        tissue_mask,
+        mask_scale_x=mask_scale_x,
+        mask_scale_y=mask_scale_y,
+        w=w,
+        h=h,
+        margin=tile_size,
+    )
+    # Align crop to the tiling grid so that (x, y) tile origins map cleanly.
+    x0a = max((x0 // tile_size) * tile_size, 0)
+    y0a = max((y0 // tile_size) * tile_size, 0)
+    x1a = min(w, ((x1 + tile_size - 1) // tile_size) * tile_size)
+    y1a = min(h, ((y1 + tile_size - 1) // tile_size) * tile_size)
+
+    pred_map = np.zeros((y1a - y0a, x1a - x0a, 3), dtype=np.float32)
 
     tile_buffer: List[np.ndarray] = []
     coord_buffer: List[Tuple[int, int, int, int]] = []
 
     # Non-overlapping tiles — the model outputs are stitched directly
-    iterator = list(tile_iterator(w, h, tile_size, overlap=0))
+    step = tile_size
+    tiles_x = (max(0, x1a - x0a) + step - 1) // step
+    tiles_y = (max(0, y1a - y0a) + step - 1) // step
+    total_tiles = tiles_x * tiles_y
 
-    for x, y, tw, th in tqdm(iterator, desc="Inferencing tiles"):
+    def _iter_crop_tiles():
+        for y in range(y0a, y1a, step):
+            for x in range(x0a, x1a, step):
+                tw = min(tile_size, w - x)
+                th = min(tile_size, h - y)
+                yield x, y, tw, th
+
+    for x, y, tw, th in tqdm(_iter_crop_tiles(), total=total_tiles, desc="Inferencing tiles"):
         if not _tile_has_tissue(
             x, y, tw, th, tissue_mask, mask_scale_x, mask_scale_y
         ):
@@ -149,20 +171,24 @@ def _stitch_global(
         coord_buffer.append((x, y, tw, th))
 
         if len(tile_buffer) >= batch_size:
-            _flush_raw_buffer(
-                inferencer, tile_buffer, coord_buffer, pred_map
-            )
+            _flush_raw_buffer(inferencer, tile_buffer, coord_buffer, pred_map, x_offset=x0a, y_offset=y0a)
             tile_buffer.clear()
             coord_buffer.clear()
 
     # Remaining
     if tile_buffer:
-        _flush_raw_buffer(
-            inferencer, tile_buffer, coord_buffer, pred_map
-        )
+        _flush_raw_buffer(inferencer, tile_buffer, coord_buffer, pred_map, x_offset=x0a, y_offset=y0a)
 
     # Single global post-processing (same as original)
-    instance_map = process_instance(pred_map)
+    #
+    # `process_instance()` is CPU-only and scales with pixel area. On WSIs, doing
+    # this over the full (H, W) canvas wastes time on blank background. Crop to
+    # the tissue mask's bounding box (with a safety margin) first.
+    #
+    # NOTE: WSI nucleus counts can exceed 65k, so uint16 will overflow.
+    inst_crop = process_instance(pred_map, output_dtype="uint32")
+    instance_map = np.zeros((h, w), dtype=np.uint32)
+    instance_map[y0a:y1a, x0a:x1a] = inst_crop
     return instance_map
 
 
@@ -171,18 +197,18 @@ def _flush_raw_buffer(
     tiles: List[np.ndarray],
     coords: List[Tuple[int, int, int, int]],
     pred_map: np.ndarray,
+    *,
+    x_offset: int = 0,
+    y_offset: int = 0,
 ) -> None:
     """Run batch inference and place raw predictions into *pred_map*."""
     raw_preds = inferencer.predict_batch(tiles, return_raw=True)
     for raw, (tx, ty, tw, th) in zip(raw_preds, coords):
         # raw has shape (th_actual, tw_actual, 3)
         rh, rw = raw.shape[:2]
-        pred_map[ty : ty + rh, tx : tx + rw, :] = raw
-
-
-# ======================================================================
-# Tile-based fallback (for local / low-RAM testing)
-# ======================================================================
+        oy = ty - y_offset
+        ox = tx - x_offset
+        pred_map[oy : oy + rh, ox : ox + rw, :] = raw
 
 def _stitch_tile(
     slide: OpenSlide,
@@ -196,23 +222,30 @@ def _stitch_tile(
     mask_scale_y: float,
     inferencer: HoverNetInferencer,
     batch_size: int,
-) -> np.ndarray:
+    *,
+    min_nucleus_area: int,
+) -> Tuple[np.ndarray, pd.DataFrame]:
     """
-    Legacy tile-based pipeline: post-process each tile independently,
-    then create a global instance map by painting each nucleus into the
-    full canvas and de-duplicating via KD-tree.
-    """
-    from scipy.spatial import cKDTree
-    from skimage.measure import regionprops
+    Tile-based pipeline: post-process each tile independently, then stitch the
+    per-tile instance maps into a global canvas.
 
-    all_nuclei: List[Dict] = []
+    Overlap handling uses centroid-based ownership: each nucleus is assigned to
+    the tile whose non-overlapping valid region contains its centroid. This
+    avoids duplicate labels across overlaps while still allowing us to paint
+    full masks.
+    """
+    instance_map = np.zeros((h, w), dtype=np.uint32)
+    records: List[Dict[str, Any]] = []
+    next_label: int = 1
 
     tile_buffer: List[np.ndarray] = []
     coord_buffer: List[Tuple[int, int, int, int]] = []
 
-    iterator = list(tile_iterator(w, h, tile_size, overlap))
+    step = tile_size - overlap
+    total_tiles = ((w + step - 1) // step) * ((h + step - 1) // step)
+    iterator = tile_iterator(w, h, tile_size, overlap)
 
-    for x, y, tw, th in tqdm(iterator, desc="Processing tiles (tile mode)"):
+    for x, y, tw, th in tqdm(iterator, total=total_tiles, desc="Processing tiles (tile mode)"):
         if not _tile_has_tissue(
             x, y, tw, th, tissue_mask, mask_scale_x, mask_scale_y
         ):
@@ -225,91 +258,166 @@ def _stitch_tile(
         coord_buffer.append((x, y, tw, th))
 
         if len(tile_buffer) >= batch_size:
-            _process_tile_buffer(
-                inferencer, tile_buffer, coord_buffer, all_nuclei
+            next_label = _stitch_tile_buffer(
+                inferencer, tile_buffer, coord_buffer, instance_map, records, next_label,
+                slide_w=w, slide_h=h, overlap=overlap, min_nucleus_area=min_nucleus_area
             )
             tile_buffer.clear()
             coord_buffer.clear()
 
     if tile_buffer:
-        _process_tile_buffer(
-            inferencer, tile_buffer, coord_buffer, all_nuclei
+        next_label = _stitch_tile_buffer(
+            inferencer, tile_buffer, coord_buffer, instance_map, records, next_label,
+            slide_w=w, slide_h=h, overlap=overlap, min_nucleus_area=min_nucleus_area
         )
 
-    # Build global instance map from collected nuclei
-    instance_map = np.zeros((h, w), dtype=np.int32)
-    if all_nuclei:
-        df = pd.DataFrame(all_nuclei)
-        df = _remove_duplicates(df, distance_threshold=8.0)
-
-        # We don't have per-pixel masks stored, so just return an
-        # empty instance_map – the df is the primary output in tile mode.
-        # Callers that need the instance map should use global mode.
-        # (We still assign unique IDs to centroids for downstream use.)
-        for idx, row in enumerate(df.itertuples(), start=1):
-            cx = int(round(row.centroid_x))
-            cy = int(round(row.centroid_y))
-            if 0 <= cy < h and 0 <= cx < w:
-                instance_map[cy, cx] = idx
-
-    return instance_map
+    # Filter small nuclei at the stitching stage to keep instance IDs stable.
+    # (If we drop later, we'd need to relabel the instance map.)
+    nuclei_df = pd.DataFrame.from_records(records)
+    return instance_map, nuclei_df
 
 
-def _process_tile_buffer(
+def _tile_valid_window(
+    tx: int,
+    ty: int,
+    tw: int,
+    th: int,
+    overlap: int,
+    *,
+    slide_w: int,
+    slide_h: int,
+) -> Tuple[int, int, int, int]:
+    """Compute a non-overlapping \"valid\" window in tile-local coordinates."""
+    if overlap <= 0:
+        return 0, 0, tw, th
+
+    left_margin = overlap // 2 if tx > 0 else 0
+    top_margin = overlap // 2 if ty > 0 else 0
+    right_margin = overlap - overlap // 2 if (tx + tw) < slide_w else 0
+    bottom_margin = overlap - overlap // 2 if (ty + th) < slide_h else 0
+
+    x0 = left_margin
+    y0 = top_margin
+    x1 = tw - right_margin
+    y1 = th - bottom_margin
+
+    # Edge tiles can be smaller than overlap margins; fall back to full tile.
+    if x1 <= x0:
+        x0, x1 = 0, tw
+    if y1 <= y0:
+        y0, y1 = 0, th
+
+    return x0, y0, x1, y1
+
+
+def _stitch_tile_buffer(
     inferencer: HoverNetInferencer,
     tiles: List[np.ndarray],
     coords: List[Tuple[int, int, int, int]],
-    all_nuclei: List[Dict],
-) -> None:
-    """Post-process each tile and accumulate nuclei dicts."""
+    instance_map: np.ndarray,
+    records: List[Dict[str, Any]],
+    next_label: int,
+    *,
+    slide_w: int,
+    slide_h: int,
+    overlap: int,
+    min_nucleus_area: int,
+) -> int:
+    """Post-process each tile and stitch into the global instance map."""
     from skimage.measure import regionprops
 
     results = inferencer.predict_batch(tiles, return_raw=False)
-    for (inst_map, _centroids), (tx, ty, tw, th) in zip(results, coords):
-        props = regionprops(inst_map)
+    for (inst_tile, _centroids), (tx, ty, tw, th) in zip(results, coords):
+        inst_tile = np.asarray(inst_tile, dtype=np.uint32)
+        if inst_tile.max() == 0:
+            continue
+
+        x0, y0, x1, y1 = _tile_valid_window(
+            tx, ty, tw, th, overlap, slide_w=slide_w, slide_h=slide_h
+        )
+
+        props = regionprops(inst_tile)
+        if len(props) == 0:
+            continue
+
+        max_label = int(inst_tile.max())
+        label_map = np.zeros((max_label + 1,), dtype=np.uint32)
+
         for prop in props:
-            cy, cx = prop.centroid
-            all_nuclei.append(
+            if prop.area < min_nucleus_area:
+                continue
+
+            cy, cx = prop.centroid  # (row, col)
+            if not (x0 <= cx < x1 and y0 <= cy < y1):
+                continue
+
+            gid = next_label
+            next_label += 1
+            label_map[prop.label] = gid
+
+            records.append(
                 {
+                    "nucleus_id": gid,
                     "centroid_x": tx + cx,
                     "centroid_y": ty + cy,
                     "area": prop.area,
                     "perimeter": prop.perimeter,
                     "eccentricity": prop.eccentricity,
-                    "solidity": prop.solidity,
+                    "equivalent_diameter": prop.equivalent_diameter,
+                    "euler_number": prop.euler_number,
+                    "extent": prop.extent,
+                    "filled_area": prop.filled_area,
+                    "major_axis_length": prop.major_axis_length,
+                    "minor_axis_length": prop.minor_axis_length,
                     "orientation": prop.orientation,
+                    "solidity": prop.solidity,
                 }
             )
 
+        if not np.any(label_map):
+            continue
 
-def _remove_duplicates(
-    nuclei_df: pd.DataFrame,
-    distance_threshold: float = 8.0,
-) -> pd.DataFrame:
-    """Remove duplicate nuclei based on centroid distance (tile mode only)."""
-    from scipy.spatial import cKDTree
+        mapped = label_map[inst_tile]
+        target = instance_map[ty : ty + th, tx : tx + tw]
+        write_mask = mapped > 0
+        if overlap > 0:
+            write_mask &= (target == 0)
+        target[write_mask] = mapped[write_mask]
 
-    if nuclei_df.empty:
-        return nuclei_df
+    return next_label
 
-    nuclei_df = nuclei_df.sort_values("area", ascending=False).reset_index(
-        drop=True
-    )
-    points = nuclei_df[["centroid_x", "centroid_y"]].values
-    tree = cKDTree(points)
-    pairs = tree.query_pairs(r=distance_threshold)
+def _tissue_bbox_from_mask(
+    tissue_mask: np.ndarray,
+    *,
+    mask_scale_x: float,
+    mask_scale_y: float,
+    w: int,
+    h: int,
+    margin: int,
+) -> Tuple[int, int, int, int]:
+    """
+    Compute a conservative level-space bounding box (y0, y1, x0, x1) that
+    contains tissue according to a (possibly downsampled) tissue mask.
+    """
+    tissue_mask = np.asarray(tissue_mask).astype(bool)
+    ys, xs = np.nonzero(tissue_mask)
+    if ys.size == 0:
+        return 0, h, 0, w
 
-    to_drop = set()
-    for i, j in pairs:
-        if i not in to_drop:
-            to_drop.add(j)
+    x0 = int(math.floor(xs.min() * mask_scale_x))
+    x1 = int(math.ceil((xs.max() + 1) * mask_scale_x))
+    y0 = int(math.floor(ys.min() * mask_scale_y))
+    y1 = int(math.ceil((ys.max() + 1) * mask_scale_y))
 
-    return nuclei_df.drop(index=list(to_drop)).reset_index(drop=True)
+    x0 = max(0, x0 - margin)
+    y0 = max(0, y0 - margin)
+    x1 = min(w, x1 + margin)
+    y1 = min(h, y1 + margin)
 
+    if x1 <= x0 or y1 <= y0:
+        return 0, h, 0, w
+    return y0, y1, x0, x1
 
-# ======================================================================
-# Shared helpers
-# ======================================================================
 
 def _resolve_tissue_mask(
     slide: OpenSlide,
