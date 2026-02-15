@@ -5,9 +5,9 @@
 #SBATCH -p gh                       # GPU partition (Grace Hopper)
 #SBATCH -N 1                        # Number of nodes
 #SBATCH -n 1                        # Total tasks
-#SBATCH -t 01:30:00                 # Wall time (increased for global stitching + deep features)
+#SBATCH -t 02:30:00                 # Wall time (global stitching + hybrid features)
 #SBATCH -A ASC25123
-#SBATCH --array=0-239%10            # 240 slides; %10 = max 10 concurrent jobs
+#SBATCH --array=0-239%20            # 240 slides; %20 = max 20 concurrent jobs
 
 # =============================================================================
 # TACC Vista - Nuclei Graph Feature Extraction Pipeline (v2 — aligned)
@@ -15,7 +15,7 @@
 # Aligned with original BiomedSciAI/histocartography:
 #   - Global pred_map stitching (no tile-boundary artefacts)
 #   - Per-node handcrafted features (24-dim) + optional deep CNN features
-#   - Full model object loading only (no state_dict fallback)
+#   - State_dict standard + legacy 'desc' checkpoint fallback
 #
 # Usage:
 #   1. Edit USER CONFIG section below
@@ -34,7 +34,7 @@ SLIDES_ROOT="/scratch/11090/joakimchi/Pediatric-Brain-Tumor"
 OUT_DIR="/scratch/11090/joakimchi/Pediatric-Brain-Tumor/data/wsi_processed"
 
 # Models
-MODEL_PATH="checkpoints/hovernet_pannuke.pth"              # HoVer-Net (full model .pth)
+MODEL_PATH="checkpoints/hovernet_pannuke.pth"              # HoVer-Net checkpoint (.pth)
 GNN_MODEL_PATH=""                                          # Optional GNN model (for feat_mode=gnn only)
 
 # Environment
@@ -44,15 +44,18 @@ PROJECT_ROOT="/scratch/11090/joakimchi/histocartography"   # Repo clone on TACC
 # Pipeline options
 GRAPH_METHOD="knn"                                         # "knn" or "radius"
 K_NEIGHBORS=5                                              # k for kNN graph
-FEAT_MODE="handcrafted"                                    # "handcrafted" | "deep" | "stats" | "gnn"
+FEAT_MODE="hybrid"                                         # "handcrafted" | "deep" | "hybrid" | "stats" | "gnn"
 FEAT_ARCHITECTURE="resnet50"                               # CNN arch for deep features
 FEAT_PATCH_SIZE=72                                         # Patch size for deep features
 FEAT_RESIZE_SIZE=""                                        # Resize before CNN (empty = no resize)
+FEAT_BATCH_SIZE="auto"                                     # Auto-tuned if set to "auto"
+FEAT_NUM_WORKERS=4                                         # DataLoader workers for deep/hybrid
+FEAT_PIN_MEMORY="true"                                     # Pin memory for deep/hybrid
 
 # Segmentation options
 STITCH_MODE="global"                                       # "global" (TACC, faithful) or "tile" (local)
 SEG_DEVICE="cuda"                                          # "cuda" or "cpu"
-SEG_BATCH_SIZE=32                                          # HoVer-Net inference batch size
+SEG_BATCH_SIZE="auto"                                      # Auto-tuned if set to "auto"
 SEG_TILE_SIZE=256                                          # Tile size (HoVer-Net native is 256)
 SEG_OVERLAP=0                                              # Tile overlap (only used in tile mode)
 SEG_LEVEL=0                                                # WSI pyramid level (0 = full resolution)
@@ -87,6 +90,13 @@ if [[ -n "${PYTORCH_ALLOC_CONF:-}" ]]; then
     export PYTORCH_CUDA_ALLOC_CONF="$PYTORCH_ALLOC_CONF"
 fi
 
+# Threading hints
+if [[ -n "${SLURM_CPUS_PER_TASK:-}" ]]; then
+    export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
+    export MKL_NUM_THREADS="$SLURM_CPUS_PER_TASK"
+    export OPENBLAS_NUM_THREADS="$SLURM_CPUS_PER_TASK"
+fi
+
 cd "$PROJECT_ROOT" || { echo "ERROR: Cannot cd to $PROJECT_ROOT"; exit 1; }
 
 mkdir -p logs
@@ -94,6 +104,35 @@ mkdir -p "$OUT_DIR"
 
 # Sanity check
 python -c "import torch; print(f'torch={torch.__version__} cuda={torch.version.cuda} avail={torch.cuda.is_available()} gpus={torch.cuda.device_count()}')" || true
+
+# Auto-tune batch sizes based on GPU memory (if set to "auto")
+GPU_MEM_MIB="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n 1)"
+if [[ "${SEG_BATCH_SIZE}" == "auto" || -z "${SEG_BATCH_SIZE}" ]]; then
+    if [[ -n "${GPU_MEM_MIB}" ]]; then
+        if (( GPU_MEM_MIB >= 80000 )); then
+            SEG_BATCH_SIZE=64
+        elif (( GPU_MEM_MIB >= 40000 )); then
+            SEG_BATCH_SIZE=32
+        else
+            SEG_BATCH_SIZE=16
+        fi
+    else
+        SEG_BATCH_SIZE=16
+    fi
+fi
+if [[ "${FEAT_BATCH_SIZE}" == "auto" || -z "${FEAT_BATCH_SIZE}" ]]; then
+    if [[ -n "${GPU_MEM_MIB}" ]]; then
+        if (( GPU_MEM_MIB >= 80000 )); then
+            FEAT_BATCH_SIZE=128
+        elif (( GPU_MEM_MIB >= 40000 )); then
+            FEAT_BATCH_SIZE=64
+        else
+            FEAT_BATCH_SIZE=32
+        fi
+    else
+        FEAT_BATCH_SIZE=32
+    fi
+fi
 
 # --- VALIDATE MANIFEST -------------------------------------------------------
 if [[ ! -f "$MANIFEST" ]]; then
@@ -152,6 +191,19 @@ if [[ -n "$FEAT_PATCH_SIZE" ]]; then
 fi
 if [[ -n "$FEAT_RESIZE_SIZE" ]]; then
     CMD+=(--feat_resize_size "$FEAT_RESIZE_SIZE")
+fi
+if [[ -n "${FEAT_BATCH_SIZE:-}" ]]; then
+    CMD+=(--feat_batch_size "$FEAT_BATCH_SIZE")
+fi
+if [[ -n "${FEAT_NUM_WORKERS:-}" ]]; then
+    CMD+=(--feat_num_workers "$FEAT_NUM_WORKERS")
+fi
+if [[ -n "${FEAT_PIN_MEMORY:-}" ]]; then
+    if [[ "$FEAT_PIN_MEMORY" == "true" ]]; then
+        CMD+=(--feat_pin_memory)
+    else
+        CMD+=(--no-feat_pin_memory)
+    fi
 fi
 
 # Segmentation overrides
