@@ -59,7 +59,7 @@ def segment_nuclei(
             are stitched before post-processing.
         tissue_mask: Optional binary mask (bool or uint8, any resolution).
             If *None*, one is computed from the slide thumbnail.
-        model_path: Path to HoVer-Net checkpoint (full model object).
+        model_path: Path to HoVer-Net checkpoint (full model object, state_dict, or legacy 'desc' format).
         batch_size: Inference batch size.
         device: ``"cuda"`` or ``"cpu"``.
         min_nucleus_area: Discard nuclei smaller than this (pixels²).

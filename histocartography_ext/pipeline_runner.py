@@ -58,7 +58,7 @@ def run_pipeline(
     Args:
         slide_path: Path to the input WSI.
         output_dir: Base directory for output. A subdir per slide is created.
-        model_path: Path to the HoVer-Net model checkpoint (full model object).
+        model_path: Path to the HoVer-Net model checkpoint (full model object, state_dict, or legacy 'desc' format).
         config: Configuration dictionary.
         force_rerun: If True, ignore cache and rerun all steps.
     """
