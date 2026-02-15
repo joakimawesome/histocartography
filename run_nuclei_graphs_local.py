@@ -158,6 +158,12 @@ def _build_batch_runner_cmd(args: argparse.Namespace, *, python: str, batch_runn
         cmd += ["--run_name", args.run_name]
     if args.gnn_model_path:
         cmd += ["--gnn_model_path", args.gnn_model_path]
+    if args.feat_batch_size is not None:
+        cmd += ["--feat_batch_size", str(args.feat_batch_size)]
+    if args.feat_num_workers is not None:
+        cmd += ["--feat_num_workers", str(args.feat_num_workers)]
+    if args.feat_pin_memory is not None:
+        cmd += ["--feat_pin_memory" if args.feat_pin_memory else "--no-feat_pin_memory"]
     if args.seg_device:
         cmd += ["--seg_device", args.seg_device]
     if args.seg_batch_size is not None:
@@ -216,7 +222,20 @@ def main() -> int:
     parser.add_argument("--graph_method", default="knn", choices=["knn", "radius"], help="Graph construction method.")
     parser.add_argument("--k", type=int, default=5, help="k for kNN graph.")
     parser.add_argument("--r", type=float, default=50.0, help="r for radius graph.")
-    parser.add_argument("--feat_mode", default="stats", choices=["stats", "gnn"], help="Feature extraction mode.")
+    parser.add_argument(
+        "--feat_mode",
+        default="stats",
+        choices=["handcrafted", "deep", "hybrid", "stats", "gnn"],
+        help="Feature extraction mode.",
+    )
+    parser.add_argument("--feat_batch_size", type=int, default=None, help="Batch size for deep or hybrid features.")
+    parser.add_argument("--feat_num_workers", type=int, default=None, help="DataLoader workers for deep or hybrid features.")
+    parser.add_argument(
+        "--feat_pin_memory",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable DataLoader pin_memory for deep or hybrid features.",
+    )
     parser.add_argument("--run_name", default=None, help="Optional run subdirectory name under --out_dir.")
     parser.add_argument(
         "--skip_errors",
