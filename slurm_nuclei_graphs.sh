@@ -2,7 +2,7 @@
 #SBATCH -J nuclei_graphs            # Job name
 #SBATCH -o logs/nuclei_graphs_%A_%a.out   # Output file (%A=array job ID, %a=task ID)
 #SBATCH -e logs/nuclei_graphs_%A_%a.err   # Error file
-#SBATCH -p gh                       # GPU partition (Grace Hopper)
+#SBATCH -p gh-dev                       # GPU partition (Grace Hopper)
 #SBATCH -N 1                        # Number of nodes
 #SBATCH -n 1                        # Total tasks
 #SBATCH -t 02:30:00                 # Wall time (global stitching + hybrid features)
@@ -49,7 +49,7 @@ FEAT_ARCHITECTURE="resnet50"                               # CNN arch for deep f
 FEAT_PATCH_SIZE=72                                         # Patch size for deep features
 FEAT_RESIZE_SIZE=""                                        # Resize before CNN (empty = no resize)
 FEAT_BATCH_SIZE="auto"                                     # Auto-tuned if set to "auto"
-FEAT_NUM_WORKERS=4                                         # DataLoader workers for deep/hybrid
+FEAT_NUM_WORKERS=16                                         # DataLoader workers for deep/hybrid
 FEAT_PIN_MEMORY="true"                                     # Pin memory for deep/hybrid
 
 # Segmentation options
