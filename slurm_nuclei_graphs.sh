@@ -5,7 +5,7 @@
 #SBATCH -p gh-dev                       # GPU partition (Grace Hopper)
 #SBATCH -N 1                        # Number of nodes
 #SBATCH -n 1                        # Total tasks
-#SBATCH -t 02:30:00                 # Wall time (global stitching + hybrid features)
+#SBATCH -t 02:00:00                 # Wall time (global stitching + hybrid features)
 #SBATCH -A ASC25123
 #SBATCH --array=0-239%20            # 240 slides; %20 = max 20 concurrent jobs
 
