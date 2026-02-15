@@ -301,6 +301,7 @@ class DeepNodeFeatureExtractor:
         batch_size: int = 32,
         fill_value: int = 255,
         num_workers: int = 0,
+        pin_memory: bool = False,
         verbose: bool = False,
         with_instance_masking: bool = False,
         extraction_layer: Optional[str] = None,
@@ -314,6 +315,7 @@ class DeepNodeFeatureExtractor:
         self.fill_value = fill_value
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.pin_memory = pin_memory
 
         cuda = torch.cuda.is_available()
         self.device = torch.device("cuda:0" if cuda else "cpu")
@@ -379,6 +381,7 @@ class DeepNodeFeatureExtractor:
             shuffle=False,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
             collate_fn=_collate_patches,
         )
 
