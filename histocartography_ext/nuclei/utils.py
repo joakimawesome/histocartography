@@ -1,8 +1,4 @@
-import numpy as np
-import cv2
-from skimage.color import rgb2hsv
-from skimage.filters import threshold_otsu
-from typing import List, Tuple, Generator, Optional, Dict
+from typing import Generator, Tuple
 
 
 def tile_iterator(

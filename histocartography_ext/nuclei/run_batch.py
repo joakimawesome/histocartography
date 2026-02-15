@@ -1,12 +1,10 @@
 import argparse
 import os
 import glob
-import pandas as pd
 import traceback
 from pathlib import Path
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import torch
 
 # Use relative import if running as module, otherwise absolute
 try:

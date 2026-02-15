@@ -1,6 +1,4 @@
-import os
 import logging
-import time
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -17,9 +15,9 @@ from .preprocessing.graph_builder_pyg import build_nuclei_graph, save_nuclei_gra
 from .features.node_features import extract_handcrafted_node_features
 from .features.deep_features import DeepNodeFeatureExtractor
 # Graph-level feature extractors (optional, local extensions)
-from .features.gnn import extract_gnn_embeddings, GraphEncoder
+from .features.gnn import extract_gnn_embeddings
 from .features.handcrafted import extract_graph_stats
-from .utils.reproducibility import set_seeds, capture_environment, save_metadata
+from .utils.reproducibility import set_seeds, save_metadata
 
 
 def setup_logger(log_file: str) -> logging.Logger:

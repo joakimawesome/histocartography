@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-import cv2
 import warnings
 from typing import Optional, Tuple, List, Union
 from .postprocess import process_instance

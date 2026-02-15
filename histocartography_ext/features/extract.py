@@ -4,7 +4,6 @@ import glob
 import torch
 import pandas as pd
 import numpy as np
-import warnings
 from tqdm import tqdm
 from .handcrafted import extract_graph_stats
 from .gnn import extract_gnn_embeddings, GraphEncoder

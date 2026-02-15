@@ -1,12 +1,10 @@
 
-import logging
 import torch
 import numpy as np
 import pandas as pd
 from torch_geometric.data import Data
-from torch_geometric.nn import knn_graph, radius_graph
 from torch_geometric.utils import remove_isolated_nodes, to_undirected
-from typing import Optional, Dict, Any, Union, List
+from typing import Optional, Dict, Any, List
 
 def build_nuclei_graph(
     nuclei_table: pd.DataFrame,
