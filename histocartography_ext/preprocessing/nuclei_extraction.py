@@ -2,29 +2,20 @@
 
 import os
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
-import cv2
 import numpy as np
 import torch
 from PIL import Image
-import os
-from typing import Optional
 
 from skimage.measure import regionprops
-from skimage.morphology import remove_small_objects
-from skimage.measure import regionprops
-from skimage.morphology import remove_small_objects
-from skimage.segmentation import watershed
-
-from scipy.ndimage import measurements
-from scipy.ndimage.morphology import binary_fill_holes
 
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from tqdm import tqdm
 
 from ..pipeline import PipelineStep
+from ..nuclei.postprocess import process_instance
 from ..utils.image import extract_patches_from_image
 from ..utils import download_box_link
 
@@ -232,95 +223,3 @@ class ImageToPatchDataset(Dataset):
             int: Length of the dataset
         """
         return self.nr_patches
-
-
-def process_np_hv_channels(pred: np.ndarray) -> np.ndarray:
-    """
-    Process Nuclei Prediction with XY Coordinate Map
-
-    Args:
-        pred (np.ndarray): HoverNet model output, that contains:
-                            - channel 0 contain probability map of nuclei
-                            - channel 1 contains X-map
-                            - channel 2 contains Y-map
-    Returns:
-         pred_instance (np.ndarray): instance map
-    """
-
-    # post-process probability map
-    proba_map = np.copy(pred[:, :, 0])  # extract proba maps
-    proba_map[proba_map >= 0.5] = 1
-    proba_map[proba_map < 0.5] = 0
-    proba_map = measurements.label(proba_map)[0]
-    proba_map = remove_small_objects(proba_map, min_size=10)
-    proba_map[proba_map > 0] = 1
-
-    h_dir = pred[:, :, 1]  # extract horizontal map
-    v_dir = pred[:, :, 2]  # extract vertical map
-
-    # normalizing
-    h_dir = cv2.normalize(
-        h_dir,
-        None,
-        alpha=0,
-        beta=1,
-        norm_type=cv2.NORM_MINMAX,
-        dtype=cv2.CV_32F)
-    v_dir = cv2.normalize(
-        v_dir,
-        None,
-        alpha=0,
-        beta=1,
-        norm_type=cv2.NORM_MINMAX,
-        dtype=cv2.CV_32F)
-
-    # apply sobel filtering
-    sobelh = cv2.Sobel(h_dir, cv2.CV_64F, 1, 0, ksize=21)
-    sobelv = cv2.Sobel(v_dir, cv2.CV_64F, 0, 1, ksize=21)
-
-    sobelh = 1 - (cv2.normalize(sobelh, None, alpha=0, beta=1,
-                                norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F))
-    sobelv = 1 - (cv2.normalize(sobelv, None, alpha=0, beta=1,
-                                norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F))
-
-    # binarize
-    overall = np.maximum(sobelh, sobelv)
-    overall = overall - (1 - proba_map)
-    overall[overall < 0] = 0
-
-    dist = (1.0 - overall) * proba_map
-    dist = -cv2.GaussianBlur(dist, (3, 3), 0)
-
-    overall[overall >= 0.5] = 1
-    overall[overall < 0.5] = 0
-    marker = proba_map - overall
-    marker[marker < 0] = 0
-    marker = binary_fill_holes(marker).astype("uint8")
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    marker = cv2.morphologyEx(marker, cv2.MORPH_OPEN, kernel)
-    marker = measurements.label(marker)[0]
-    marker = remove_small_objects(marker, min_size=10)
-
-    pred_inst = watershed(dist, marker, mask=proba_map, watershed_line=False)
-
-    return pred_inst
-
-
-def process_instance(
-        pred_map: np.ndarray,
-        output_dtype: str = "uint16") -> np.ndarray:
-    """
-    Post processing script for image tiles
-
-    Args:
-        pred_map (np.ndarray): commbined output of np and hv branches
-        output_dtype (str): data type of output
-
-    Returns:
-        pred_inst (np.ndarray): pixel-wise nuclear instance segmentation prediction
-    """
-
-    pred_inst = np.squeeze(pred_map)
-    pred_inst = process_np_hv_channels(pred_inst)
-    pred_inst = pred_inst.astype(output_dtype)
-    return pred_inst
