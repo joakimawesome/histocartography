@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -65,31 +65,59 @@ class NucleiExtractor(PipelineStep):
         else:
             self.batch_size = batch_size
 
-        if model_path is None:
+        checkpoint_dir = Path(os.path.dirname(__file__)) / CHECKPOINT_PATH
+        candidate_paths: List[Path] = []
+
+        if model_path is not None:
+            candidate_paths.append(Path(model_path))
+        else:
             assert pretrained_data in [
                 "pannuke",
                 "monusac",
             ], 'Unsupported pretrained data checkpoint. Options are "pannuke" and "monusac".'
-            model_path = os.path.join(
-                os.path.dirname(__file__),
-                CHECKPOINT_PATH,
-                pretrained_data + ".pt")
-            if not os.path.isfile(model_path):
-                download_box_link(DATASET_TO_CHECKPOINT_URL[pretrained_data], model_path)
 
-        try:
-            self._load_model_from_path(model_path)
-        except RuntimeError as exception:
-            if model_path is not None and pretrained_data in DATASET_TO_CHECKPOINT_URL:
-                try:
-                    if os.path.isfile(model_path):
-                        os.remove(model_path)
-                    download_box_link(DATASET_TO_CHECKPOINT_URL[pretrained_data], model_path)
-                    self._load_model_from_path(model_path)
-                except Exception:
-                    raise exception
-            else:
-                raise
+            local_checkpoint = checkpoint_dir / f"hovernet_{pretrained_data}.pth"
+            downloaded_checkpoint = checkpoint_dir / f"{pretrained_data}.pt"
+
+            if local_checkpoint.is_file():
+                candidate_paths.append(local_checkpoint)
+            candidate_paths.append(downloaded_checkpoint)
+
+        load_errors: List[str] = []
+        loaded = False
+        for candidate_path in candidate_paths:
+            candidate_path = candidate_path.resolve()
+
+            if not candidate_path.is_file() and pretrained_data in DATASET_TO_CHECKPOINT_URL:
+                download_box_link(DATASET_TO_CHECKPOINT_URL[pretrained_data], str(candidate_path))
+
+            if candidate_path.is_file() and self._looks_like_html(candidate_path):
+                if pretrained_data in DATASET_TO_CHECKPOINT_URL:
+                    try:
+                        candidate_path.unlink(missing_ok=True)
+                        download_box_link(DATASET_TO_CHECKPOINT_URL[pretrained_data], str(candidate_path))
+                    except Exception:
+                        pass
+
+            if candidate_path.is_file() and self._looks_like_html(candidate_path):
+                load_errors.append(
+                    f"{candidate_path}: looks like an HTML response instead of a checkpoint binary"
+                )
+                continue
+
+            try:
+                self._load_model_from_path(str(candidate_path))
+                loaded = True
+                break
+            except RuntimeError as exception:
+                load_errors.append(f"{candidate_path}: {exception}")
+
+        if not loaded:
+            raise RuntimeError(
+                "Unable to load a valid nuclei checkpoint. Tried:\n- "
+                + "\n- ".join(load_errors)
+                + "\nPass a known-good file via model_path/--nuclei-model-path."
+            )
 
         self.model = self.model.to(self.device)
         self.model.eval()
@@ -126,10 +154,12 @@ class NucleiExtractor(PipelineStep):
                     break
 
             # Some checkpoints may directly be a state dict.
-            if state_dict is None and len(checkpoint) > 0 and all(
-                isinstance(key, str) for key in checkpoint.keys()
-            ):
-                state_dict = checkpoint
+            if state_dict is None and len(checkpoint) > 0:
+                keys_are_valid = all(isinstance(key, str) for key in checkpoint.keys())
+                key_pattern_matches = any("." in key for key in checkpoint.keys())
+                values_are_tensors = all(torch.is_tensor(value) for value in checkpoint.values())
+                if keys_are_valid and key_pattern_matches and values_are_tensors:
+                    state_dict = checkpoint
 
             if isinstance(state_dict, dict) and len(state_dict) > 0:
                 cleaned_state_dict = {}
@@ -154,6 +184,16 @@ class NucleiExtractor(PipelineStep):
             f"Unsupported checkpoint format in '{model_path}'. Expected a serialized torch.nn.Module, "
             f"but got '{type(checkpoint)}'."
         )
+
+    @staticmethod
+    def _looks_like_html(path: Path) -> bool:
+        """Detect whether a downloaded file is likely an HTML response page instead of a checkpoint."""
+        try:
+            with open(path, "rb") as handle:
+                head = handle.read(256).lstrip().lower()
+            return head.startswith(b"<") or b"<html" in head or b"<!doctype" in head
+        except Exception:
+            return False
 
     def _process(  # type: ignore[override]
         self,
