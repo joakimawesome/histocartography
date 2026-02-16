@@ -136,54 +136,85 @@ class NucleiExtractor(PipelineStep):
             self.model = checkpoint
             return
 
+        state_dict = self._extract_state_dict(checkpoint)
+        if isinstance(state_dict, dict) and len(state_dict) > 0:
+            cleaned_state_dict = {}
+            for key, value in state_dict.items():
+                if isinstance(key, str) and key.startswith("module."):
+                    cleaned_state_dict[key.replace("module.", "", 1)] = value
+                else:
+                    cleaned_state_dict[key] = value
+
+            model = HoverNet()
+            try:
+                model.load_state_dict(cleaned_state_dict, strict=True)
+                self.model = model
+                return
+            except RuntimeError as exception:
+                raise RuntimeError(
+                    f"Checkpoint '{model_path}' does not match the expected HoverNet architecture. "
+                    "Provide a compatible checkpoint via model_path/--nuclei-model-path."
+                ) from exception
+
         if isinstance(checkpoint, dict):
-            # Common key names used across HoverNet repos/checkpoints.
-            candidate_keys = [
-                "state_dict",
-                "model_state_dict",
-                "model",
-                "net",
-                "weights",
-                "params",
-            ]
-            state_dict = None
-            for key in candidate_keys:
-                value = checkpoint.get(key)
-                if isinstance(value, dict) and len(value) > 0:
-                    state_dict = value
-                    break
-
-            # Some checkpoints may directly be a state dict.
-            if state_dict is None and len(checkpoint) > 0:
-                keys_are_valid = all(isinstance(key, str) for key in checkpoint.keys())
-                key_pattern_matches = any("." in key for key in checkpoint.keys())
-                values_are_tensors = all(torch.is_tensor(value) for value in checkpoint.values())
-                if keys_are_valid and key_pattern_matches and values_are_tensors:
-                    state_dict = checkpoint
-
-            if isinstance(state_dict, dict) and len(state_dict) > 0:
-                cleaned_state_dict = {}
-                for key, value in state_dict.items():
-                    if isinstance(key, str) and key.startswith("module."):
-                        cleaned_state_dict[key.replace("module.", "", 1)] = value
-                    else:
-                        cleaned_state_dict[key] = value
-
-                model = HoverNet()
-                try:
-                    model.load_state_dict(cleaned_state_dict, strict=True)
-                    self.model = model
-                    return
-                except RuntimeError as exception:
-                    raise RuntimeError(
-                        f"Checkpoint '{model_path}' does not match the expected HoverNet architecture. "
-                        "Provide a compatible checkpoint via model_path/--nuclei-model-path."
-                    ) from exception
+            key_summary = ", ".join(
+                [f"{k}:{type(v).__name__}" for k, v in list(checkpoint.items())[:10]]
+            )
+            raise RuntimeError(
+                f"Unsupported checkpoint format in '{model_path}'. Top-level keys/types: {key_summary}"
+            )
 
         raise RuntimeError(
             f"Unsupported checkpoint format in '{model_path}'. Expected a serialized torch.nn.Module, "
             f"but got '{type(checkpoint)}'."
         )
+
+    def _extract_state_dict(self, checkpoint_obj):
+        """Recursively extract a plausible torch state_dict from heterogeneous checkpoint formats."""
+        if isinstance(checkpoint_obj, torch.nn.Module):
+            return checkpoint_obj.state_dict()
+
+        if isinstance(checkpoint_obj, dict):
+            # Common containers in training checkpoints
+            for key in ["state_dict", "model_state_dict", "model", "net", "weights", "params"]:
+                if key in checkpoint_obj:
+                    extracted = self._extract_state_dict(checkpoint_obj[key])
+                    if extracted is not None:
+                        return extracted
+
+            # Direct state-dict style: dotted string keys + tensor values
+            if len(checkpoint_obj) > 0 and all(isinstance(key, str) for key in checkpoint_obj.keys()):
+                tensor_items = {
+                    key: value for key, value in checkpoint_obj.items() if torch.is_tensor(value)
+                }
+                if len(tensor_items) > 0 and any("." in key for key in tensor_items.keys()):
+                    return tensor_items
+
+            # Search nested objects in dict values
+            for value in checkpoint_obj.values():
+                extracted = self._extract_state_dict(value)
+                if extracted is not None:
+                    return extracted
+
+        if isinstance(checkpoint_obj, (list, tuple)):
+            # Sometimes checkpoints are serialized as list/tuple of (key, tensor) pairs
+            if len(checkpoint_obj) > 0 and all(
+                isinstance(item, (list, tuple)) and len(item) == 2 for item in checkpoint_obj
+            ):
+                try:
+                    as_dict = dict(checkpoint_obj)
+                    extracted = self._extract_state_dict(as_dict)
+                    if extracted is not None:
+                        return extracted
+                except Exception:
+                    pass
+
+            for value in checkpoint_obj:
+                extracted = self._extract_state_dict(value)
+                if extracted is not None:
+                    return extracted
+
+        return None
 
     @staticmethod
     def _looks_like_html(path: Path) -> bool:
