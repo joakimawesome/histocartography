@@ -14,8 +14,15 @@ echo "[INFO] Job started at $(date)"
 echo "[INFO] Host: $(hostname)"
 echo "[INFO] Working dir: ${SLURM_SUBMIT_DIR}"
 
-cd "${SLURM_SUBMIT_DIR}"
+# Resolve repo root robustly from this script's location.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+cd "${REPO_ROOT}"
 mkdir -p logs
+
+# Ensure local package imports (histocartography/) are resolvable.
+export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 
 # Vista docs recommend managing software via modules in job scripts.
 module reset
@@ -38,6 +45,8 @@ source "${HC_ENV}/bin/activate"
 
 PYTHON_BIN="$(command -v python)"
 echo "[INFO] Python: ${PYTHON_BIN}"
+echo "[INFO] Repo root: ${REPO_ROOT}"
+echo "[INFO] PYTHONPATH: ${PYTHONPATH}"
 
 # Tunable runtime knobs (override at submit time: VAR=value sbatch ...)
 NUM_WORKERS="${NUM_WORKERS:-8}"
