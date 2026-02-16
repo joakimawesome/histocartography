@@ -17,7 +17,11 @@ import torchvision
 from histocartography.preprocessing.tissue_mask import GaussianTissueMask
 from histocartography.utils import dynamic_import_from
 from scipy.stats import skew
-from skimage.feature import greycomatrix, greycoprops
+try:
+    from skimage.feature import greycomatrix, greycoprops
+except ImportError:
+    from skimage.feature import graycomatrix as greycomatrix
+    from skimage.feature import graycoprops as greycoprops
 from skimage.filters.rank import entropy as Entropy
 from skimage.measure import regionprops
 from skimage.morphology import disk
