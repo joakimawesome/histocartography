@@ -25,12 +25,13 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from ..pipeline import PipelineStep
+from ..ml.models.hovernet import HoverNet
 from ..utils.image import extract_patches_from_image
 from ..utils import download_box_link
 
 DATASET_TO_BOX_URL = {
-    "pannuke": "https://ibm.box.com/shared/static/hrt04i3dcv1ph1veoz8x6g8a72u0uw58.pt",
-    "monusac": "https://ibm.box.com/shared/static/u563aoydow9w2kpgw0l8esuklegdtdij.pt",
+    "pannuke": "https://drive.google.com/uc?export=download&id=1SbSArI3KOOWHxRlxnjchO7_MbWzB4lNR",
+    "monusac": "https://drive.google.com/uc?export=download&id=13qkxDqv7CUqxN-l5CpeFVmc24mDw6CeV",
 }
 
 CHECKPOINT_PATH = "../../checkpoints"
@@ -110,6 +111,48 @@ class NucleiExtractor(PipelineStep):
         if isinstance(checkpoint, torch.nn.Module):
             self.model = checkpoint
             return
+
+        if isinstance(checkpoint, dict):
+            # Common key names used across HoverNet repos/checkpoints.
+            candidate_keys = [
+                "state_dict",
+                "model_state_dict",
+                "model",
+                "net",
+                "weights",
+                "params",
+            ]
+            state_dict = None
+            for key in candidate_keys:
+                value = checkpoint.get(key)
+                if isinstance(value, dict) and len(value) > 0:
+                    state_dict = value
+                    break
+
+            # Some checkpoints may directly be a state dict.
+            if state_dict is None and len(checkpoint) > 0 and all(
+                isinstance(key, str) for key in checkpoint.keys()
+            ):
+                state_dict = checkpoint
+
+            if isinstance(state_dict, dict) and len(state_dict) > 0:
+                cleaned_state_dict = {}
+                for key, value in state_dict.items():
+                    if isinstance(key, str) and key.startswith("module."):
+                        cleaned_state_dict[key.replace("module.", "", 1)] = value
+                    else:
+                        cleaned_state_dict[key] = value
+
+                model = HoverNet()
+                try:
+                    model.load_state_dict(cleaned_state_dict, strict=True)
+                    self.model = model
+                    return
+                except RuntimeError as exception:
+                    raise RuntimeError(
+                        f"Checkpoint '{model_path}' does not match the expected HoverNet architecture. "
+                        "Provide a compatible checkpoint via model_path/--nuclei-model-path."
+                    ) from exception
 
         raise RuntimeError(
             f"Unsupported checkpoint format in '{model_path}'. Expected a serialized torch.nn.Module, "
