@@ -74,6 +74,9 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/Pediatric-Brain-Tumor/data/wsi_processed}"
 OUTPUT_SUBDIR="${OUTPUT_SUBDIR:-histocartography_graph_embeddings_vista}"
 
 NUCLEI_MODEL_ARGS=()
+if [ -z "${NUCLEI_MODEL_PATH}" ] && [ -f "${REPO_ROOT}/checkpoints/hovernet_pannuke.pth" ]; then
+  NUCLEI_MODEL_PATH="${REPO_ROOT}/checkpoints/hovernet_pannuke.pth"
+fi
 if [ -n "${NUCLEI_MODEL_PATH}" ]; then
   NUCLEI_MODEL_ARGS=(--nuclei-model-path "${NUCLEI_MODEL_PATH}")
 fi
