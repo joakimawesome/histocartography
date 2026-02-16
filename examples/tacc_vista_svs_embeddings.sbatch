@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH -J hc_svs_embed
-#SBATCH -o logs/%x.%j.out
-#SBATCH -e logs/%x.%j.err
+#SBATCH -o %x.%A_%a.out
+#SBATCH -e %x.%A_%a.err
 #SBATCH -p gh
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -t 24:00:00
 #SBATCH -A ASC25123
-#SBATCH --array=0-5
+#SBATCH --array=0-23%12
 
 set -euo pipefail
 
@@ -20,7 +20,6 @@ REPO_ROOT="${SLURM_SUBMIT_DIR}"
 
 cd "${REPO_ROOT}"
 REPO_ROOT="$(pwd)"
-mkdir -p logs
 
 # Vista docs recommend managing software via modules in job scripts.
 module reset
@@ -43,6 +42,15 @@ source "${HC_ENV}/bin/activate"
 
 PYTHON_BIN="$(command -v python)"
 
+# Runtime tuning for throughput/stability on GH nodes.
+export PYTHONUNBUFFERED=1
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
+export TORCH_HOME="${TORCH_HOME:-$SCRATCH/.cache/torch}"
+mkdir -p "${TORCH_HOME}"
+
 # Ensure local package imports (histocartography/) are resolvable after modules/venv are active.
 export PYTHONPATH="${REPO_ROOT}:${REPO_ROOT}/histocartography:${PYTHONPATH:-}"
 
@@ -62,7 +70,7 @@ print("[INFO] histocartography:", histocartography.__file__)
 PY
 
 # Tunable runtime knobs (override at submit time: VAR=value sbatch ...)
-NUM_WORKERS="${NUM_WORKERS:-8}"
+NUM_WORKERS="${NUM_WORKERS:-12}"
 NUCLEI_BATCH="${NUCLEI_BATCH:-16}"
 CELL_BATCH="${CELL_BATCH:-64}"
 PATCH_BATCH="${PATCH_BATCH:-128}"
