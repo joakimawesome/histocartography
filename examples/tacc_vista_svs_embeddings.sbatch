@@ -25,7 +25,7 @@ module load python3
 
 # Activate your Python environment.
 # Set HC_ENV before submission, or edit this path.
-HC_ENV_DEFAULT="$SCATCH/histocart_env"
+HC_ENV_DEFAULT="$SCRATCH/histocart_env"
 HC_ENV="${HC_ENV:-$HC_ENV_DEFAULT}"
 
 if [ ! -f "${HC_ENV}/bin/activate" ]; then
