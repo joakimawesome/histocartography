@@ -377,9 +377,22 @@ def _stitch_tile_buffer(
         if inst_tile.max() == 0:
             continue
 
-        x0, y0, x1, y1 = _tile_valid_window(
+        # HoverNet outputs a smaller "valid" region than the input tile due to
+        # internal cropping. Align output coordinates to the input tile.
+        oh, ow = inst_tile.shape[:2]
+        dx = max((tw - ow) // 2, 0)
+        dy = max((th - oh) // 2, 0)
+
+        x0_in, y0_in, x1_in, y1_in = _tile_valid_window(
             tx, ty, tw, th, overlap, slide_w=slide_w, slide_h=slide_h
         )
+        # Map the valid window from input-tile coords to output-tile coords.
+        x0 = max(0, x0_in - dx)
+        y0 = max(0, y0_in - dy)
+        x1 = min(ow, x1_in - dx)
+        y1 = min(oh, y1_in - dy)
+        if x1 <= x0 or y1 <= y0:
+            x0, y0, x1, y1 = 0, 0, ow, oh
 
         props = regionprops(inst_tile)
         if len(props) == 0:
@@ -403,8 +416,8 @@ def _stitch_tile_buffer(
             records.append(
                 {
                     "nucleus_id": gid,
-                    "centroid_x": tx + cx,
-                    "centroid_y": ty + cy,
+                    "centroid_x": tx + dx + cx,
+                    "centroid_y": ty + dy + cy,
                     "area": prop.area,
                     "perimeter": prop.perimeter,
                     "eccentricity": prop.eccentricity,
@@ -423,7 +436,11 @@ def _stitch_tile_buffer(
             continue
 
         mapped = label_map[inst_tile]
-        target = instance_map[ty : ty + th, tx : tx + tw]
+        gy0 = ty + dy
+        gx0 = tx + dx
+        gy1 = gy0 + oh
+        gx1 = gx0 + ow
+        target = instance_map[gy0:gy1, gx0:gx1]
         write_mask = mapped > 0
         if overlap > 0:
             write_mask &= (target == 0)
