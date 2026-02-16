@@ -2,17 +2,13 @@
 
 import os
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import cv2
 import numpy as np
 import torch
 from PIL import Image
-import os
-from typing import Optional
 
-from skimage.measure import regionprops
-from skimage.morphology import remove_small_objects
 from skimage.measure import regionprops
 from skimage.morphology import remove_small_objects
 from skimage.segmentation import watershed
@@ -29,7 +25,7 @@ from ..ml.models.hovernet import HoverNet
 from ..utils.image import extract_patches_from_image
 from ..utils import download_box_link
 
-DATASET_TO_BOX_URL = {
+DATASET_TO_CHECKPOINT_URL = {
     "pannuke": "https://drive.google.com/uc?export=download&id=1SbSArI3KOOWHxRlxnjchO7_MbWzB4lNR",
     "monusac": "https://drive.google.com/uc?export=download&id=13qkxDqv7CUqxN-l5CpeFVmc24mDw6CeV",
 }
@@ -46,8 +42,8 @@ class NucleiExtractor(PipelineStep):
     def __init__(
         self,
         pretrained_data: str = "pannuke",
-        model_path: str = None,
-        batch_size: int = None,
+        model_path: Optional[str] = None,
+        batch_size: Optional[int] = None,
         **kwargs,
     ) -> None:
         """Create a nuclei extractor
@@ -79,16 +75,16 @@ class NucleiExtractor(PipelineStep):
                 CHECKPOINT_PATH,
                 pretrained_data + ".pt")
             if not os.path.isfile(model_path):
-                download_box_link(DATASET_TO_BOX_URL[pretrained_data], model_path)
+                download_box_link(DATASET_TO_CHECKPOINT_URL[pretrained_data], model_path)
 
         try:
             self._load_model_from_path(model_path)
         except RuntimeError as exception:
-            if model_path is not None and pretrained_data in DATASET_TO_BOX_URL:
+            if model_path is not None and pretrained_data in DATASET_TO_CHECKPOINT_URL:
                 try:
                     if os.path.isfile(model_path):
                         os.remove(model_path)
-                    download_box_link(DATASET_TO_BOX_URL[pretrained_data], model_path)
+                    download_box_link(DATASET_TO_CHECKPOINT_URL[pretrained_data], model_path)
                     self._load_model_from_path(model_path)
                 except Exception:
                     raise exception
