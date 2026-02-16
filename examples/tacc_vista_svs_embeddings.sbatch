@@ -21,9 +21,6 @@ cd "${REPO_ROOT}"
 REPO_ROOT="$(pwd)"
 mkdir -p logs
 
-# Ensure local package imports (histocartography/) are resolvable.
-export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
-
 # Vista docs recommend managing software via modules in job scripts.
 module reset
 module load gcc
@@ -44,9 +41,24 @@ fi
 source "${HC_ENV}/bin/activate"
 
 PYTHON_BIN="$(command -v python)"
+
+# Ensure local package imports (histocartography/) are resolvable after modules/venv are active.
+export PYTHONPATH="${REPO_ROOT}:${REPO_ROOT}/histocartography:${PYTHONPATH:-}"
+
 echo "[INFO] Python: ${PYTHON_BIN}"
 echo "[INFO] Repo root: ${REPO_ROOT}"
 echo "[INFO] PYTHONPATH: ${PYTHONPATH}"
+
+# Preflight import check for fast failure with clear diagnostics.
+python - << 'PY'
+import os
+import sys
+print("[INFO] CWD:", os.getcwd())
+print("[INFO] sys.executable:", sys.executable)
+print("[INFO] sys.path[0:5]:", sys.path[:5])
+import histocartography
+print("[INFO] histocartography:", histocartography.__file__)
+PY
 
 # Tunable runtime knobs (override at submit time: VAR=value sbatch ...)
 NUM_WORKERS="${NUM_WORKERS:-8}"
@@ -60,7 +72,7 @@ INPUT_DIR="${INPUT_DIR:-$SCRATCH/Pediatric-Brain-Tumor/data/wsi_raw}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/Pediatric-Brain-Tumor/data/wsi_processed}"
 OUTPUT_SUBDIR="${OUTPUT_SUBDIR:-histocartography_graph_embeddings_vista}"
 
-python examples/svs_graph_embeddings.py \
+python "${REPO_ROOT}/examples/svs_graph_embeddings.py" \
   --input-dir "${INPUT_DIR}" \
   --output-root "${OUTPUT_ROOT}" \
   --output-subdir "${OUTPUT_SUBDIR}" \
