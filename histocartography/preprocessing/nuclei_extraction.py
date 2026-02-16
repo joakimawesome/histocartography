@@ -25,6 +25,7 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from ..pipeline import PipelineStep
+from ..ml.models.hovernet import HoverNet
 from ..utils.image import extract_patches_from_image
 from ..utils import download_box_link
 
@@ -34,6 +35,10 @@ DATASET_TO_BOX_URL = {
 }
 
 CHECKPOINT_PATH = "../../checkpoints"
+LOCAL_DATASET_TO_CHECKPOINT = {
+    "pannuke": "hovernet_pannuke.pth",
+    "monusac": "hovernet_monusac.pth",
+}
 
 GPU_DEFAULT_BATCH_SIZE = 16
 CPU_DEFAULT_BATCH_SIZE = 2
@@ -73,11 +78,14 @@ class NucleiExtractor(PipelineStep):
                 "pannuke",
                 "monusac",
             ], 'Unsupported pretrained data checkpoint. Options are "pannuke" and "monusac".'
-            model_path = os.path.join(
-                os.path.dirname(__file__),
-                CHECKPOINT_PATH,
-                pretrained_data + ".pt")
-            download_box_link(DATASET_TO_BOX_URL[pretrained_data], model_path)
+            checkpoint_dir = Path(os.path.dirname(__file__)) / CHECKPOINT_PATH
+            local_checkpoint_path = checkpoint_dir / LOCAL_DATASET_TO_CHECKPOINT[pretrained_data]
+
+            if local_checkpoint_path.exists():
+                model_path = str(local_checkpoint_path)
+            else:
+                model_path = str(checkpoint_dir / f"{pretrained_data}.pt")
+                download_box_link(DATASET_TO_BOX_URL[pretrained_data], model_path)
 
         self._load_model_from_path(model_path)
         self.model = self.model.to(self.device)
@@ -85,7 +93,40 @@ class NucleiExtractor(PipelineStep):
 
     def _load_model_from_path(self, model_path):
         """Load nuclei extraction model from provided model path."""
-        self.model = torch.load(model_path)
+        try:
+            checkpoint = torch.load(model_path, map_location=self.device)
+        except Exception as exception:
+            raise RuntimeError(
+                f"Unable to load nuclei model checkpoint from '{model_path}'. "
+                "The file may be corrupted or may not be a valid PyTorch checkpoint."
+            ) from exception
+
+        if isinstance(checkpoint, torch.nn.Module):
+            self.model = checkpoint
+            return
+
+        if isinstance(checkpoint, dict):
+            state_dict = checkpoint.get("state_dict", checkpoint)
+            if not isinstance(state_dict, dict):
+                raise RuntimeError(
+                    f"Unsupported checkpoint dictionary format in '{model_path}'."
+                )
+
+            cleaned_state_dict = {}
+            for key, value in state_dict.items():
+                if isinstance(key, str) and key.startswith("module."):
+                    cleaned_state_dict[key.replace("module.", "", 1)] = value
+                else:
+                    cleaned_state_dict[key] = value
+
+            model = HoverNet()
+            model.load_state_dict(cleaned_state_dict, strict=True)
+            self.model = model
+            return
+
+        raise RuntimeError(
+            f"Unsupported checkpoint object type '{type(checkpoint)}' in '{model_path}'."
+        )
 
     def _process(  # type: ignore[override]
         self,
