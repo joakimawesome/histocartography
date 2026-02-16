@@ -7,6 +7,7 @@
 #SBATCH -n 1
 #SBATCH -t 24:00:00
 #SBATCH -A ASC25123
+#SBATCH --array=0-5
 
 set -euo pipefail
 
@@ -68,6 +69,10 @@ PATCH_BATCH="${PATCH_BATCH:-128}"
 MAX_TILES_PER_SLIDE="${MAX_TILES_PER_SLIDE:-0}"
 NUCLEI_MODE="${NUCLEI_MODE:-classical}"
 NUCLEI_MODEL_PATH="${NUCLEI_MODEL_PATH:-}"
+EXPORT_PATCH_EMBEDDINGS="${EXPORT_PATCH_EMBEDDINGS:-0}"
+
+SHARD_INDEX="${SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
+NUM_SHARDS="${NUM_SHARDS:-${SLURM_ARRAY_TASK_COUNT:-1}}"
 
 # Repo-aligned defaults requested by user
 INPUT_DIR="${INPUT_DIR:-$SCRATCH/Pediatric-Brain-Tumor/data/wsi_raw}"
@@ -82,10 +87,20 @@ if [ -n "${NUCLEI_MODEL_PATH}" ]; then
   NUCLEI_MODEL_ARGS=(--nuclei-model-path "${NUCLEI_MODEL_PATH}")
 fi
 
+PATCH_ARGS=()
+if [ "${EXPORT_PATCH_EMBEDDINGS}" = "1" ]; then
+  PATCH_ARGS=(--export-patch-embeddings)
+fi
+
+echo "[INFO] Shard: ${SHARD_INDEX}/${NUM_SHARDS}"
+echo "[INFO] Export patch embeddings: ${EXPORT_PATCH_EMBEDDINGS}"
+
 python "${REPO_ROOT}/examples/svs_graph_embeddings.py" \
   --input-dir "${INPUT_DIR}" \
   --output-root "${OUTPUT_ROOT}" \
   --output-subdir "${OUTPUT_SUBDIR}" \
+  --shard-index "${SHARD_INDEX}" \
+  --num-shards "${NUM_SHARDS}" \
   --nuclei-mode "${NUCLEI_MODE}" \
   --tile-size 2048 \
   --tile-stride 2048 \
@@ -95,8 +110,8 @@ python "${REPO_ROOT}/examples/svs_graph_embeddings.py" \
   --num-workers "${NUM_WORKERS}" \
   --max-tiles-per-slide "${MAX_TILES_PER_SLIDE}" \
   "${NUCLEI_MODEL_ARGS[@]}" \
+  "${PATCH_ARGS[@]}" \
   --save-graphs \
-  --export-patch-embeddings \
   --continue-on-error
 
 echo "[INFO] Job finished at $(date)"
