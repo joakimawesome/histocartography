@@ -2,10 +2,10 @@
 #SBATCH -J hc_svs_embed
 #SBATCH -o logs/%x.%j.out
 #SBATCH -e logs/%x.%j.err
-#SBATCH -p gh-dev
+#SBATCH -p gh
 #SBATCH -N 1
 #SBATCH -n 1
-#SBATCH -t 02:00:00
+#SBATCH -t 24:00:00
 #SBATCH -A ASC25123
 
 set -euo pipefail
