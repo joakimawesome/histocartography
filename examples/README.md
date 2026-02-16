@@ -65,3 +65,32 @@ This example allows you to generate an explanation, i.e., node-level importance 
 - [Grad-CAM : Visual Explanations from Deep Networks.](https://arxiv.org/pdf/1610.02391.pdf) Selvaraju et al., ICCV, 2017. 
 - [Explainability methods  for graph  convolutional  neu-ral  networks.](https://openaccess.thecvf.com/content_CVPR_2019/papers/Pope_Explainability_Methods_for_Graph_Convolutional_Neural_Networks_CVPR_2019_paper.pdf) Pope et al., CVPR, 2019. 
 - [Quantifying Explainers of Graph Neural Networks in Computational Pathology.](https://arxiv.org/pdf/2011.12646.pdf) Jaume et al., CVPR, 2021.
+
+## Example 6: SVS WSI graph + patch embeddings
+
+Run the script as:
+`python svs_graph_embeddings.py --input-dir data/wsi_raw --output-root data/wsi_processed --output-subdir histocartography_graph_embeddings --save-graphs --export-patch-embeddings --continue-on-error`
+
+This example processes a folder of SVS whole-slide images (recursively), extracts tiles from each slide, builds one cell graph per accepted tile, and then pools graph-level vectors into a single embedding per WSI. It can also extract patch-level embeddings with 256x256 patches (configurable) and pool them to one WSI-level patch embedding.
+
+The script writes per-slide embeddings, optional per-tile graph/patch outputs, and a `processing_summary.csv` file under the output directory.
+
+Default paths are set for this repository layout: input defaults to `data/wsi_raw` and outputs are saved under `data/wsi_processed/histocartography_graph_embeddings` unless you override them.
+
+TACC-style GPU run example:
+`python svs_graph_embeddings.py --tile-size 2048 --tile-stride 2048 --nuclei-batch-size 16 --cell-feature-batch-size 64 --patch-feature-batch-size 128 --num-workers 8 --save-graphs --export-patch-embeddings --continue-on-error`
+
+Note: this example requires OpenSlide (`openslide-python`) and the OpenSlide native library to read `.svs` files.
+
+For TACC Vista, use the provided batch script:
+`sbatch examples/tacc_vista_svs_embeddings.sbatch`
+
+The script is aligned with Vista running documentation (queue/partition usage and `sbatch` conventions) and defaults to:
+
+- input: `data/wsi_raw`
+- output: `data/wsi_processed/histocartography_graph_embeddings_vista`
+
+Queue guidance from Vista docs:
+
+- use `gh-dev` (2 hours) for quick validation/debug
+- switch to `gh` (up to 48 hours) for production-scale runs
