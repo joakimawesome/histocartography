@@ -15,8 +15,10 @@ import argparse
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
+import cv2
 import numpy as np
 from dgl.data.utils import save_graphs
+from skimage import measure, morphology
 from tqdm import tqdm
 
 from histocartography.preprocessing import (
@@ -102,6 +104,13 @@ def _parse_args() -> argparse.Namespace:
         default="pannuke",
         choices=["pannuke", "monusac"],
         help="HoverNet checkpoint used by NucleiExtractor.",
+    )
+    parser.add_argument(
+        "--nuclei-mode",
+        type=str,
+        default="hovernet",
+        choices=["hovernet", "classical"],
+        help="Nuclei extraction backend. 'classical' avoids checkpoint dependencies.",
     )
     parser.add_argument(
         "--nuclei-model-path",
@@ -263,12 +272,37 @@ def _graph_embedding_from_node_features(node_features: np.ndarray, pool: str) ->
     raise ValueError(f"Unsupported pooling method: {pool}")
 
 
+def _extract_nuclei_classical(
+    tile: np.ndarray,
+    min_area: int = 20,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Simple nuclei-like instance extraction fallback that does not require a learned model."""
+    gray = cv2.cvtColor(tile, cv2.COLOR_RGB2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    _, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    kernel = np.ones((3, 3), np.uint8)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
+    binary = morphology.remove_small_objects(binary.astype(bool), min_size=min_area)
+
+    labeled = measure.label(binary, connectivity=2)
+    regions = measure.regionprops(labeled)
+    centroids = np.empty((len(regions), 2), dtype=np.float32)
+    for index, region in enumerate(regions):
+        center_y, center_x = region.centroid
+        centroids[index, 0] = float(center_x)
+        centroids[index, 1] = float(center_y)
+    return labeled.astype(np.int32), centroids
+
+
 def _build_extractors(args: argparse.Namespace):
-    nuclei_extractor = NucleiExtractor(
-        pretrained_data=args.nuclei_pretrained_data,
-        model_path=None if args.nuclei_model_path is None else str(args.nuclei_model_path),
-        batch_size=args.nuclei_batch_size,
-    )
+    nuclei_extractor = None
+    if args.nuclei_mode == "hovernet":
+        nuclei_extractor = NucleiExtractor(
+            pretrained_data=args.nuclei_pretrained_data,
+            model_path=None if args.nuclei_model_path is None else str(args.nuclei_model_path),
+            batch_size=args.nuclei_batch_size,
+        )
     node_feature_extractor = DeepFeatureExtractor(
         architecture=args.cell_feature_arch,
         patch_size=args.cell_patch_size,
@@ -349,7 +383,10 @@ def _process_one_slide(
             skipped_background += 1
             continue
 
-        nuclei_map, _ = nuclei_extractor.process(tile)
+        if nuclei_extractor is None:
+            nuclei_map, _ = _extract_nuclei_classical(tile)
+        else:
+            nuclei_map, _ = nuclei_extractor.process(tile)
         if nuclei_map.max() == 0:
             skipped_no_nuclei += 1
             continue

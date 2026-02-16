@@ -66,6 +66,7 @@ NUCLEI_BATCH="${NUCLEI_BATCH:-16}"
 CELL_BATCH="${CELL_BATCH:-64}"
 PATCH_BATCH="${PATCH_BATCH:-128}"
 MAX_TILES_PER_SLIDE="${MAX_TILES_PER_SLIDE:-0}"
+NUCLEI_MODE="${NUCLEI_MODE:-classical}"
 NUCLEI_MODEL_PATH="${NUCLEI_MODEL_PATH:-}"
 
 # Repo-aligned defaults requested by user
@@ -85,6 +86,7 @@ python "${REPO_ROOT}/examples/svs_graph_embeddings.py" \
   --input-dir "${INPUT_DIR}" \
   --output-root "${OUTPUT_ROOT}" \
   --output-subdir "${OUTPUT_SUBDIR}" \
+  --nuclei-mode "${NUCLEI_MODE}" \
   --tile-size 2048 \
   --tile-stride 2048 \
   --nuclei-batch-size "${NUCLEI_BATCH}" \
