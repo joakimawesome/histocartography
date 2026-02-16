@@ -14,8 +14,8 @@ echo "[INFO] Job started at $(date)"
 echo "[INFO] Host: $(hostname)"
 echo "[INFO] Working dir: ${SLURM_SUBMIT_DIR}"
 
-# Assume this script is submitted from examples/ and repo root is one level up.
-REPO_ROOT="${SLURM_SUBMIT_DIR}/.."
+# Assume this script is submitted from the repository root.
+REPO_ROOT="${SLURM_SUBMIT_DIR}"
 
 cd "${REPO_ROOT}"
 REPO_ROOT="$(pwd)"
