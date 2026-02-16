@@ -14,11 +14,11 @@ echo "[INFO] Job started at $(date)"
 echo "[INFO] Host: $(hostname)"
 echo "[INFO] Working dir: ${SLURM_SUBMIT_DIR}"
 
-# Resolve repo root robustly from this script's location.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# Assume this script is submitted from examples/ and repo root is one level up.
+REPO_ROOT="${SLURM_SUBMIT_DIR}/.."
 
 cd "${REPO_ROOT}"
+REPO_ROOT="$(pwd)"
 mkdir -p logs
 
 # Ensure local package imports (histocartography/) are resolvable.
