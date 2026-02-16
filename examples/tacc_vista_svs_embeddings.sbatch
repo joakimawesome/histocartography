@@ -66,11 +66,17 @@ NUCLEI_BATCH="${NUCLEI_BATCH:-16}"
 CELL_BATCH="${CELL_BATCH:-64}"
 PATCH_BATCH="${PATCH_BATCH:-128}"
 MAX_TILES_PER_SLIDE="${MAX_TILES_PER_SLIDE:-0}"
+NUCLEI_MODEL_PATH="${NUCLEI_MODEL_PATH:-}"
 
 # Repo-aligned defaults requested by user
 INPUT_DIR="${INPUT_DIR:-$SCRATCH/Pediatric-Brain-Tumor/data/wsi_raw}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/Pediatric-Brain-Tumor/data/wsi_processed}"
 OUTPUT_SUBDIR="${OUTPUT_SUBDIR:-histocartography_graph_embeddings_vista}"
+
+NUCLEI_MODEL_ARGS=()
+if [ -n "${NUCLEI_MODEL_PATH}" ]; then
+  NUCLEI_MODEL_ARGS=(--nuclei-model-path "${NUCLEI_MODEL_PATH}")
+fi
 
 python "${REPO_ROOT}/examples/svs_graph_embeddings.py" \
   --input-dir "${INPUT_DIR}" \
@@ -83,6 +89,7 @@ python "${REPO_ROOT}/examples/svs_graph_embeddings.py" \
   --patch-feature-batch-size "${PATCH_BATCH}" \
   --num-workers "${NUM_WORKERS}" \
   --max-tiles-per-slide "${MAX_TILES_PER_SLIDE}" \
+  "${NUCLEI_MODEL_ARGS[@]}" \
   --save-graphs \
   --export-patch-embeddings \
   --continue-on-error

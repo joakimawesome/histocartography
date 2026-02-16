@@ -104,6 +104,12 @@ def _parse_args() -> argparse.Namespace:
         help="HoverNet checkpoint used by NucleiExtractor.",
     )
     parser.add_argument(
+        "--nuclei-model-path",
+        type=Path,
+        default=None,
+        help="Optional explicit path to a nuclei checkpoint. When provided, this overrides automatic checkpoint download logic.",
+    )
+    parser.add_argument(
         "--nuclei-batch-size",
         type=int,
         default=8,
@@ -260,6 +266,7 @@ def _graph_embedding_from_node_features(node_features: np.ndarray, pool: str) ->
 def _build_extractors(args: argparse.Namespace):
     nuclei_extractor = NucleiExtractor(
         pretrained_data=args.nuclei_pretrained_data,
+        model_path=None if args.nuclei_model_path is None else str(args.nuclei_model_path),
         batch_size=args.nuclei_batch_size,
     )
     node_feature_extractor = DeepFeatureExtractor(

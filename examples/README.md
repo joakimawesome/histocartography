@@ -77,6 +77,9 @@ The script writes per-slide embeddings, optional per-tile graph/patch outputs, a
 
 Default paths are set for this repository layout: input defaults to `data/wsi_raw` and outputs are saved under `data/wsi_processed/histocartography_graph_embeddings` unless you override them.
 
+If default nuclei checkpoint links are unavailable, pass an explicit checkpoint with:
+`--nuclei-model-path /absolute/path/to/hovernet_checkpoint.pt`
+
 TACC-style GPU run example:
 `python svs_graph_embeddings.py --tile-size 2048 --tile-stride 2048 --nuclei-batch-size 16 --cell-feature-batch-size 64 --patch-feature-batch-size 128 --num-workers 8 --save-graphs --export-patch-embeddings --continue-on-error`
 
