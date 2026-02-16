@@ -63,6 +63,18 @@ def _parse_args() -> argparse.Namespace:
         help="File pattern used to find slides recursively under input-dir.",
     )
     parser.add_argument(
+        "--shard-index",
+        type=int,
+        default=0,
+        help="Shard index for parallel slide processing (0-based).",
+    )
+    parser.add_argument(
+        "--num-shards",
+        type=int,
+        default=1,
+        help="Total number of shards for parallel slide processing.",
+    )
+    parser.add_argument(
         "--tile-size",
         type=int,
         default=2048,
@@ -444,11 +456,12 @@ def _process_one_slide(
 def _save_summary(
     summary_rows: List[Dict[str, object]],
     output_dir: Path,
+    summary_name: str = "processing_summary.csv",
 ) -> None:
     import pandas as pd
 
     summary = pd.DataFrame(summary_rows)
-    summary.to_csv(output_dir / "processing_summary.csv", index=False)
+    summary.to_csv(output_dir / summary_name, index=False)
 
 
 def main() -> None:
@@ -463,6 +476,23 @@ def main() -> None:
         raise FileNotFoundError(
             f"No files matching pattern '{args.glob_pattern}' were found in {args.input_dir}"
         )
+
+    if args.num_shards <= 0:
+        raise ValueError("--num-shards must be >= 1")
+    if args.shard_index < 0 or args.shard_index >= args.num_shards:
+        raise ValueError("--shard-index must be in [0, --num-shards)")
+
+    if args.num_shards > 1:
+        slide_paths = [
+            slide_path
+            for index, slide_path in enumerate(slide_paths)
+            if index % args.num_shards == args.shard_index
+        ]
+        if len(slide_paths) == 0:
+            print(
+                f"No slides assigned to shard {args.shard_index}/{args.num_shards}. Nothing to do."
+            )
+            return
 
     out_dirs = {
         "base": args.output_dir,
@@ -515,24 +545,35 @@ def main() -> None:
             pooled_patch_embeddings.append(np.load(patch_embed_path))
             pooled_patch_slide_names.append(slide_path.name)
 
+    graph_npz_name = "all_wsi_graph_embeddings.npz"
+    patch_npz_name = "all_wsi_patch_embeddings.npz"
+    summary_name = "processing_summary.csv"
+    failures_name = "processing_failures.csv"
+    if args.num_shards > 1:
+        suffix = f".shard{args.shard_index:03d}-of-{args.num_shards:03d}"
+        graph_npz_name = f"all_wsi_graph_embeddings{suffix}.npz"
+        patch_npz_name = f"all_wsi_patch_embeddings{suffix}.npz"
+        summary_name = f"processing_summary{suffix}.csv"
+        failures_name = f"processing_failures{suffix}.csv"
+
     if len(pooled_graph_embeddings) > 0:
         np.savez(
-            out_dirs["base"] / "all_wsi_graph_embeddings.npz",
+            out_dirs["base"] / graph_npz_name,
             slide_names=np.array(pooled_graph_slide_names, dtype=object),
             embeddings=np.stack(pooled_graph_embeddings, axis=0),
         )
     if len(pooled_patch_embeddings) > 0:
         np.savez(
-            out_dirs["base"] / "all_wsi_patch_embeddings.npz",
+            out_dirs["base"] / patch_npz_name,
             slide_names=np.array(pooled_patch_slide_names, dtype=object),
             embeddings=np.stack(pooled_patch_embeddings, axis=0),
         )
 
-    _save_summary(summary_rows, out_dirs["base"])
+    _save_summary(summary_rows, out_dirs["base"], summary_name=summary_name)
     if len(failed_rows) > 0:
         import pandas as pd
 
-        pd.DataFrame(failed_rows).to_csv(out_dirs["base"] / "processing_failures.csv", index=False)
+        pd.DataFrame(failed_rows).to_csv(out_dirs["base"] / failures_name, index=False)
     print(f"Done. Results written to: {out_dirs['base']}")
 
 
