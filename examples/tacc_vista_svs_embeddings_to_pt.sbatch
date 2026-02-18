@@ -7,7 +7,6 @@
 #SBATCH -n 1
 #SBATCH -t 04:00:00
 #SBATCH -A ASC25123
-#SBATCH --array=0-23%8
 
 set -euo pipefail
 
