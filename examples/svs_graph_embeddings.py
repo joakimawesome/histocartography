@@ -321,6 +321,150 @@ def _extract_nuclei_classical(
     return labeled.astype(np.int32), centroids
 
 
+def _load_torch_checkpoint(checkpoint_path: Path) -> Any:
+    try:
+        return torch.load(str(checkpoint_path), map_location="cpu", weights_only=True)
+    except TypeError:
+        return torch.load(str(checkpoint_path), map_location="cpu")
+
+
+def _infer_hovernet_pkg_model_args(
+    checkpoint_desc: Dict[str, Any],
+    mode_override: str,
+    nr_types_override: int,
+) -> Tuple[str, Optional[int]]:
+    mode = mode_override
+    if mode == "auto":
+        has_fast_pad = any(
+            isinstance(key, str) and key.startswith("conv0.pad")
+            for key in checkpoint_desc.keys()
+        )
+        mode = "fast" if has_fast_pad else "original"
+
+    nr_types: Optional[int]
+    if nr_types_override >= 0:
+        nr_types = None if nr_types_override == 0 else nr_types_override
+    else:
+        tp_key = "decoder.tp.u0.conv.weight"
+        if tp_key in checkpoint_desc and hasattr(checkpoint_desc[tp_key], "shape"):
+            nr_types = int(checkpoint_desc[tp_key].shape[0])
+        else:
+            nr_types = None
+
+    return mode, nr_types
+
+
+class HoverNetPackageNucleiExtractor:
+    """Nuclei extraction using the external hover-net package model/checkpoint conventions."""
+
+    def __init__(
+        self,
+        model_path: Path,
+        model_mode: str = "auto",
+        nr_types: int = -1,
+    ) -> None:
+        try:
+            from hover_net.models.hovernet.net_desc import create_model
+            from hover_net.models.hovernet.post_proc import process as hover_post_process
+            from hover_net.models.hovernet.run_desc import infer_step
+            from hover_net.run_utils.utils import convert_pytorch_checkpoint
+        except Exception as exc:
+            raise ImportError(
+                "hover-net package backend requested, but imports failed. "
+                "Install with `pip install hover-net`."
+            ) from exc
+
+        if not model_path.is_file():
+            raise FileNotFoundError(
+                f"hover-net checkpoint not found: {model_path}. "
+                "Provide a valid file via --nuclei-model-path."
+            )
+
+        checkpoint = _load_torch_checkpoint(model_path)
+        if isinstance(checkpoint, dict) and "desc" in checkpoint and isinstance(checkpoint["desc"], dict):
+            checkpoint_desc = checkpoint["desc"]
+        elif isinstance(checkpoint, dict):
+            checkpoint_desc = checkpoint
+        else:
+            raise RuntimeError(
+                f"Unsupported hover-net checkpoint format in {model_path}. "
+                "Expected a dict with key 'desc' or a plain state_dict-like dict."
+            )
+
+        checkpoint_desc = convert_pytorch_checkpoint(checkpoint_desc)
+        resolved_mode, resolved_nr_types = _infer_hovernet_pkg_model_args(
+            checkpoint_desc,
+            mode_override=model_mode,
+            nr_types_override=nr_types,
+        )
+
+        self.model = create_model(mode=resolved_mode, nr_types=resolved_nr_types)
+        self.model.load_state_dict(checkpoint_desc, strict=True)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = self.model.to(self.device)
+        self.model.eval()
+
+        self.resolved_mode = resolved_mode
+        self.resolved_nr_types = resolved_nr_types
+        self.infer_step = infer_step
+        self.post_process = hover_post_process
+
+    def process(self, input_image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        if input_image.ndim != 3 or input_image.shape[2] != 3:
+            raise ValueError("Expected RGB image with shape [H, W, 3] for hover-net inference.")
+
+        batch = torch.from_numpy(input_image[np.newaxis, ...].copy())
+        pred_batch = self.infer_step(batch, self.model)
+        pred_map = pred_batch[0]
+        inst_map, inst_info = self.post_process(
+            pred_map,
+            nr_types=self.resolved_nr_types,
+            return_centroids=True,
+        )
+
+        target_h, target_w = input_image.shape[:2]
+        map_h, map_w = inst_map.shape[:2]
+
+        if map_h == target_h and map_w == target_w:
+            aligned_map = inst_map.astype(np.int32)
+            offset_x = 0
+            offset_y = 0
+        else:
+            aligned_map = np.zeros((target_h, target_w), dtype=np.int32)
+            paste_h = min(map_h, target_h)
+            paste_w = min(map_w, target_w)
+            src_y0 = max((map_h - paste_h) // 2, 0)
+            src_x0 = max((map_w - paste_w) // 2, 0)
+            dst_y0 = max((target_h - paste_h) // 2, 0)
+            dst_x0 = max((target_w - paste_w) // 2, 0)
+            aligned_map[dst_y0 : dst_y0 + paste_h, dst_x0 : dst_x0 + paste_w] = inst_map[
+                src_y0 : src_y0 + paste_h,
+                src_x0 : src_x0 + paste_w,
+            ].astype(np.int32)
+            offset_x = float(dst_x0 - src_x0)
+            offset_y = float(dst_y0 - src_y0)
+
+        if inst_info is None or len(inst_info) == 0:
+            centroids = np.empty((0, 2), dtype=np.float32)
+        else:
+            centroid_rows: List[np.ndarray] = []
+            for nucleus in inst_info.values():
+                centroid = nucleus.get("centroid", None)
+                if centroid is None:
+                    continue
+                centroid = np.asarray(centroid, dtype=np.float32)
+                centroid[0] += offset_x
+                centroid[1] += offset_y
+                centroid_rows.append(centroid)
+            centroids = (
+                np.stack(centroid_rows, axis=0)
+                if len(centroid_rows) > 0
+                else np.empty((0, 2), dtype=np.float32)
+            )
+
+        return aligned_map, centroids
+
+
 def _build_extractors(args: argparse.Namespace):
     nuclei_extractor = None
     if args.nuclei_mode == "hovernet":
@@ -328,6 +472,16 @@ def _build_extractors(args: argparse.Namespace):
             pretrained_data=args.nuclei_pretrained_data,
             model_path=None if args.nuclei_model_path is None else str(args.nuclei_model_path),
             batch_size=args.nuclei_batch_size,
+        )
+    elif args.nuclei_mode == "hovernet-package":
+        if args.nuclei_model_path is None:
+            raise ValueError(
+                "--nuclei-model-path is required when --nuclei-mode hovernet-package"
+            )
+        nuclei_extractor = HoverNetPackageNucleiExtractor(
+            model_path=args.nuclei_model_path,
+            model_mode=args.hovernet_pkg_model_mode,
+            nr_types=args.hovernet_pkg_nr_types,
         )
     node_feature_extractor = DeepFeatureExtractor(
         architecture=args.cell_feature_arch,
