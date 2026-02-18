@@ -121,8 +121,21 @@ def _parse_args() -> argparse.Namespace:
         "--nuclei-mode",
         type=str,
         default="hovernet",
-        choices=["hovernet", "classical"],
+        choices=["hovernet", "hovernet-package", "classical"],
         help="Nuclei extraction backend. 'classical' avoids checkpoint dependencies.",
+    )
+    parser.add_argument(
+        "--hovernet-pkg-model-mode",
+        type=str,
+        default="auto",
+        choices=["auto", "fast", "original"],
+        help="Model mode when using --nuclei-mode hovernet-package. Use auto to infer from checkpoint.",
+    )
+    parser.add_argument(
+        "--hovernet-pkg-nr-types",
+        type=int,
+        default=-1,
+        help="Number of nuclei types for hovernet-package backend (-1 = infer from checkpoint, 0 = segmentation only).",
     )
     parser.add_argument(
         "--nuclei-model-path",
