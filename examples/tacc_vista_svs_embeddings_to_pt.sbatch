@@ -5,7 +5,7 @@
 #SBATCH -p gh-dev
 #SBATCH -N 1
 #SBATCH -n 1
-#SBATCH -t 04:00:00
+#SBATCH -t 01:00:00
 #SBATCH -A ASC25123
 
 set -euo pipefail
