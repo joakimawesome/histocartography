@@ -335,11 +335,34 @@ def _infer_hovernet_pkg_model_args(
 ) -> Tuple[str, Optional[int]]:
     mode = mode_override
     if mode == "auto":
-        has_fast_pad = any(
-            isinstance(key, str) and key.startswith("conv0.pad")
-            for key in checkpoint_desc.keys()
-        )
-        mode = "fast" if has_fast_pad else "original"
+        decoder_key_candidates = [
+            "decoder.np.u3.conva.weight",
+            "decoder.hv.u3.conva.weight",
+            "decoder.tp.u3.conva.weight",
+            "decoder.np.u2.conva.weight",
+            "decoder.hv.u2.conva.weight",
+            "decoder.tp.u2.conva.weight",
+            "decoder.np.u1.conva.weight",
+            "decoder.hv.u1.conva.weight",
+            "decoder.tp.u1.conva.weight",
+        ]
+        inferred_kernel = None
+        for key in decoder_key_candidates:
+            value = checkpoint_desc.get(key, None)
+            if value is not None and hasattr(value, "shape") and len(value.shape) >= 4:
+                inferred_kernel = int(value.shape[-1])
+                break
+
+        if inferred_kernel == 3:
+            mode = "fast"
+        elif inferred_kernel == 5:
+            mode = "original"
+        else:
+            has_fast_pad = any(
+                isinstance(key, str) and key.startswith("conv0.pad")
+                for key in checkpoint_desc.keys()
+            )
+            mode = "fast" if has_fast_pad else "original"
 
     nr_types: Optional[int]
     if nr_types_override >= 0:
@@ -399,7 +422,27 @@ class HoverNetPackageNucleiExtractor:
         )
 
         self.model = create_model(mode=resolved_mode, nr_types=resolved_nr_types)
-        self.model.load_state_dict(checkpoint_desc, strict=True)
+        try:
+            self.model.load_state_dict(checkpoint_desc, strict=True)
+        except RuntimeError as exc:
+            # Guardrail for ambiguous auto-detection on non-standard checkpoints.
+            if model_mode == "auto":
+                retry_mode = "original" if resolved_mode == "fast" else "fast"
+                retry_model = create_model(mode=retry_mode, nr_types=resolved_nr_types)
+                try:
+                    retry_model.load_state_dict(checkpoint_desc, strict=True)
+                    self.model = retry_model
+                    resolved_mode = retry_mode
+                except RuntimeError:
+                    raise RuntimeError(
+                        "Unable to load hover-net checkpoint with either model mode. "
+                        "Try setting --hovernet-pkg-model-mode explicitly to 'fast' or 'original'."
+                    ) from exc
+            else:
+                raise RuntimeError(
+                    "Checkpoint/model-mode mismatch for hover-net backend. "
+                    f"Selected mode='{model_mode}'. Try the other mode or use --hovernet-pkg-model-mode auto."
+                ) from exc
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = self.model.to(self.device)
         self.model.eval()
