@@ -13,13 +13,14 @@ Outputs are saved as .npy/.npz/.csv files under --output-dir.
 
 import argparse
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 from dgl.data.utils import save_graphs
 from skimage import measure, morphology
 from tqdm import tqdm
+import torch
 
 from histocartography.preprocessing import (
     DeepFeatureExtractor,
@@ -358,7 +359,7 @@ def _build_extractors(args: argparse.Namespace):
 def _process_one_slide(
     slide_path: Path,
     args: argparse.Namespace,
-    nuclei_extractor: NucleiExtractor,
+    nuclei_extractor: Optional[Any],
     node_feature_extractor: DeepFeatureExtractor,
     graph_builder: KNNGraphBuilder,
     patch_feature_extractor: Optional[GridDeepFeatureExtractor],
