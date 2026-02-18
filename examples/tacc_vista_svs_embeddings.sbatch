@@ -44,10 +44,12 @@ PYTHON_BIN="$(command -v python)"
 
 # Runtime tuning for throughput/stability on GH nodes.
 export PYTHONUNBUFFERED=1
+export PYTHONFAULTHANDLER=1
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
 export TORCH_HOME="${TORCH_HOME:-$SCRATCH/.cache/torch}"
 mkdir -p "${TORCH_HOME}"
 
@@ -70,7 +72,6 @@ print("[INFO] histocartography:", histocartography.__file__)
 PY
 
 # Tunable runtime knobs (override at submit time: VAR=value sbatch ...)
-NUM_WORKERS="${NUM_WORKERS:-12}"
 NUCLEI_BATCH="${NUCLEI_BATCH:-16}"
 CELL_BATCH="${CELL_BATCH:-64}"
 PATCH_BATCH="${PATCH_BATCH:-128}"
@@ -80,6 +81,18 @@ NUCLEI_MODEL_PATH="${NUCLEI_MODEL_PATH:-}"
 HOVERNET_PKG_MODEL_MODE="${HOVERNET_PKG_MODEL_MODE:-auto}"
 HOVERNET_PKG_NR_TYPES="${HOVERNET_PKG_NR_TYPES:--1}"
 EXPORT_PATCH_EMBEDDINGS="${EXPORT_PATCH_EMBEDDINGS:-0}"
+
+# Worker default is mode-sensitive for stability. hovernet-package + many workers
+# can trigger native segfaults on some stacks; default to 0 unless explicitly overridden.
+if [ -z "${NUM_WORKERS+x}" ]; then
+  if [ "${NUCLEI_MODE}" = "hovernet-package" ]; then
+    NUM_WORKERS=0
+  else
+    NUM_WORKERS=12
+  fi
+else
+  NUM_WORKERS="${NUM_WORKERS}"
+fi
 
 SHARD_INDEX="${SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
 NUM_SHARDS="${NUM_SHARDS:-${SLURM_ARRAY_TASK_COUNT:-1}}"
@@ -112,6 +125,7 @@ echo "[INFO] Nuclei mode: ${NUCLEI_MODE}"
 echo "[INFO] Nuclei model path: ${NUCLEI_MODEL_PATH:-<none>}"
 echo "[INFO] hover-net package model mode: ${HOVERNET_PKG_MODEL_MODE}"
 echo "[INFO] hover-net package nr_types: ${HOVERNET_PKG_NR_TYPES}"
+echo "[INFO] NUM_WORKERS: ${NUM_WORKERS}"
 echo "[INFO] Export patch embeddings: ${EXPORT_PATCH_EMBEDDINGS}"
 
 python "${REPO_ROOT}/examples/svs_graph_embeddings.py" \
