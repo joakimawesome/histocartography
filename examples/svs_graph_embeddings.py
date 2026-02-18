@@ -385,6 +385,7 @@ class HoverNetPackageNucleiExtractor:
         model_path: Path,
         model_mode: str = "auto",
         nr_types: int = -1,
+        batch_size: int = 4,
     ) -> None:
         try:
             from hover_net.models.hovernet.net_desc import create_model
@@ -451,14 +452,118 @@ class HoverNetPackageNucleiExtractor:
         self.resolved_nr_types = resolved_nr_types
         self.infer_step = infer_step
         self.post_process = hover_post_process
+        self.batch_size = max(1, int(batch_size))
+        if self.resolved_mode == "fast":
+            self.patch_input_shape = 256
+            self.patch_output_shape = 164
+        else:
+            self.patch_input_shape = 270
+            self.patch_output_shape = 80
+
+    @staticmethod
+    def _prepare_patching(
+        image: np.ndarray,
+        input_size: int,
+        output_size: int,
+    ) -> Tuple[np.ndarray, np.ndarray, Tuple[int, int]]:
+        step = output_size
+
+        def _last_steps(length: int, mask_size: int, step_size: int) -> int:
+            nr_step = int(np.ceil((length - mask_size) / step_size))
+            return int((nr_step + 1) * step_size)
+
+        height, width = image.shape[:2]
+        last_h = _last_steps(height, output_size, step)
+        last_w = _last_steps(width, output_size, step)
+
+        diff = input_size - step
+        pad_top = diff // 2
+        pad_left = diff // 2
+        pad_bottom = last_h + input_size - height
+        pad_right = last_w + input_size - width
+
+        padded = np.pad(
+            image,
+            ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)),
+            mode="reflect",
+        )
+
+        coord_y = np.arange(0, last_h, step, dtype=np.int32)
+        coord_x = np.arange(0, last_w, step, dtype=np.int32)
+        row_idx = np.arange(0, coord_y.shape[0], dtype=np.int32)
+        col_idx = np.arange(0, coord_x.shape[0], dtype=np.int32)
+
+        coord_y, coord_x = np.meshgrid(coord_y, coord_x)
+        row_idx, col_idx = np.meshgrid(row_idx, col_idx)
+
+        patch_info = np.stack(
+            [coord_y.flatten(), coord_x.flatten(), row_idx.flatten(), col_idx.flatten()],
+            axis=-1,
+        )
+        return padded, patch_info, (pad_top, pad_left)
+
+    @staticmethod
+    def _reassemble_prediction(
+        patch_predictions: List[np.ndarray],
+        patch_info: np.ndarray,
+        src_shape: Tuple[int, int],
+    ) -> np.ndarray:
+        if len(patch_predictions) == 0:
+            raise RuntimeError("No hover-net patch predictions were produced.")
+
+        entries = list(zip(patch_info.tolist(), patch_predictions))
+        entries = sorted(entries, key=lambda item: [item[0][0], item[0][1]])
+        sorted_info, sorted_data = zip(*entries)
+
+        patch_shape = np.squeeze(sorted_data[0]).shape
+        channels = 1 if len(patch_shape) == 2 else patch_shape[-1]
+
+        nr_row = max(info[2] for info in sorted_info) + 1
+        nr_col = max(info[3] for info in sorted_info) + 1
+
+        pred_map = np.concatenate(sorted_data, axis=0)
+        pred_map = np.reshape(pred_map, (nr_row, nr_col) + patch_shape)
+        axes = [0, 2, 1, 3, 4] if channels != 1 else [0, 2, 1, 3]
+        pred_map = np.transpose(pred_map, axes)
+        pred_map = np.reshape(
+            pred_map,
+            (patch_shape[0] * nr_row, patch_shape[1] * nr_col, channels),
+        )
+        pred_map = np.squeeze(pred_map[: src_shape[0], : src_shape[1]])
+        return pred_map
 
     def process(self, input_image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         if input_image.ndim != 3 or input_image.shape[2] != 3:
             raise ValueError("Expected RGB image with shape [H, W, 3] for hover-net inference.")
 
-        batch = torch.from_numpy(input_image[np.newaxis, ...].copy())
-        pred_batch = self.infer_step(batch, self.model)
-        pred_map = pred_batch[0]
+        src_h, src_w = input_image.shape[:2]
+        padded, patch_info, _ = self._prepare_patching(
+            input_image,
+            input_size=self.patch_input_shape,
+            output_size=self.patch_output_shape,
+        )
+
+        patch_predictions: List[np.ndarray] = []
+        total = patch_info.shape[0]
+        for start in range(0, total, self.batch_size):
+            end = min(start + self.batch_size, total)
+            batch_info = patch_info[start:end]
+            batch_patches = [
+                padded[
+                    int(info[0]) : int(info[0]) + self.patch_input_shape,
+                    int(info[1]) : int(info[1]) + self.patch_input_shape,
+                ]
+                for info in batch_info
+            ]
+            batch_tensor = torch.from_numpy(np.stack(batch_patches, axis=0).copy())
+            pred_batch = self.infer_step(batch_tensor, self.model)
+            patch_predictions.extend([pred_batch[index : index + 1] for index in range(pred_batch.shape[0])])
+
+        pred_map = self._reassemble_prediction(
+            patch_predictions=patch_predictions,
+            patch_info=patch_info,
+            src_shape=(src_h, src_w),
+        )
         inst_map, inst_info = self.post_process(
             pred_map,
             nr_types=self.resolved_nr_types,
@@ -525,6 +630,7 @@ def _build_extractors(args: argparse.Namespace):
             model_path=args.nuclei_model_path,
             model_mode=args.hovernet_pkg_model_mode,
             nr_types=args.hovernet_pkg_nr_types,
+            batch_size=args.nuclei_batch_size,
         )
     node_feature_extractor = DeepFeatureExtractor(
         architecture=args.cell_feature_arch,
