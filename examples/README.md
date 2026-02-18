@@ -88,6 +88,17 @@ Note: this example requires OpenSlide (`openslide-python`) and the OpenSlide nat
 For TACC Vista, use the provided batch script:
 `sbatch examples/tacc_vista_svs_embeddings.sbatch`
 
+To convert generated embedding outputs (`.npy` / `.npz`) into PyTorch `.pt` files without rerunning extraction, use:
+`sbatch examples/tacc_vista_svs_embeddings_to_pt.sbatch`
+
+This writes `.pt` files next to existing outputs (for example `graph_embedding.pt`, `tile_graph_embeddings.pt`, and `all_wsi_graph_embeddings*.pt`) and, by default, one merged training artifact `all_wsi_fused_embeddings*.pt` with aligned slide names and graph/patch tensors.
+
+Merged artifact controls:
+
+- disable merged artifact: `MERGE_SINGLE_PT=0 sbatch examples/tacc_vista_svs_embeddings_to_pt.sbatch`
+- customize merged filename: `MERGED_FILENAME=my_fused_embeddings.pt sbatch examples/tacc_vista_svs_embeddings_to_pt.sbatch`
+- overwrite existing `.pt`: `OVERWRITE=1 sbatch examples/tacc_vista_svs_embeddings_to_pt.sbatch`
+
 The script is aligned with Vista running documentation (queue/partition usage and `sbatch` conventions) and defaults to:
 
 - input: `data/wsi_raw`
