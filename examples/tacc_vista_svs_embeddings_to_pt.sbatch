@@ -45,7 +45,7 @@ export PYTHONPATH="${REPO_ROOT}:${REPO_ROOT}/histocartography:${PYTHONPATH:-}"
 
 # Repo-aligned defaults requested by user
 OUTPUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/Pediatric-Brain-Tumor/data/wsi_processed}"
-OUTPUT_SUBDIR="${OUTPUT_SUBDIR:-histocartography_graph_embeddings_vista}"
+OUTPUT_SUBDIR="${OUTPUT_SUBDIR:-histocartography_graph_embeddings}"
 
 SHARD_INDEX="${SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
 NUM_SHARDS="${NUM_SHARDS:-${SLURM_ARRAY_TASK_COUNT:-1}}"
