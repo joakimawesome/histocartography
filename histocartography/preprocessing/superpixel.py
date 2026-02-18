@@ -11,10 +11,7 @@ import cv2
 import h5py
 import numpy as np
 from skimage.color.colorconv import rgb2hed
-try:
-    from skimage import graph
-except ImportError:
-    from skimage.future import graph
+from skimage.future import graph
 from skimage.segmentation import slic
 
 from ..pipeline import PipelineStep
