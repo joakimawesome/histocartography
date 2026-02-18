@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -J hc_svs_embed
-#SBATCH -o %x.%A_%a.out
-#SBATCH -e %x.%A_%a.err
+#SBATCH -o logs/%x.%A_%a.out
+#SBATCH -e logs/%x.%A_%a.err
 #SBATCH -p gh
 #SBATCH -N 1
 #SBATCH -n 1
