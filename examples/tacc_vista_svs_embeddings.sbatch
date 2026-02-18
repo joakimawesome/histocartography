@@ -77,6 +77,8 @@ PATCH_BATCH="${PATCH_BATCH:-128}"
 MAX_TILES_PER_SLIDE="${MAX_TILES_PER_SLIDE:-0}"
 NUCLEI_MODE="${NUCLEI_MODE:-classical}"
 NUCLEI_MODEL_PATH="${NUCLEI_MODEL_PATH:-}"
+HOVERNET_PKG_MODEL_MODE="${HOVERNET_PKG_MODEL_MODE:-auto}"
+HOVERNET_PKG_NR_TYPES="${HOVERNET_PKG_NR_TYPES:--1}"
 EXPORT_PATCH_EMBEDDINGS="${EXPORT_PATCH_EMBEDDINGS:-0}"
 
 SHARD_INDEX="${SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
@@ -88,11 +90,16 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/Pediatric-Brain-Tumor/data/wsi_processed}"
 OUTPUT_SUBDIR="${OUTPUT_SUBDIR:-histocartography_graph_embeddings}"
 
 NUCLEI_MODEL_ARGS=()
-if [ -z "${NUCLEI_MODEL_PATH}" ] && [ -f "${REPO_ROOT}/checkpoints/hovernet_pannuke.pth" ]; then
-  NUCLEI_MODEL_PATH="${REPO_ROOT}/checkpoints/hovernet_pannuke.pth"
-fi
 if [ -n "${NUCLEI_MODEL_PATH}" ]; then
   NUCLEI_MODEL_ARGS=(--nuclei-model-path "${NUCLEI_MODEL_PATH}")
+fi
+
+HOVERNET_PKG_ARGS=()
+if [ "${NUCLEI_MODE}" = "hovernet-package" ]; then
+  HOVERNET_PKG_ARGS=(
+    --hovernet-pkg-model-mode "${HOVERNET_PKG_MODEL_MODE}"
+    --hovernet-pkg-nr-types "${HOVERNET_PKG_NR_TYPES}"
+  )
 fi
 
 PATCH_ARGS=()
@@ -101,6 +108,10 @@ if [ "${EXPORT_PATCH_EMBEDDINGS}" = "1" ]; then
 fi
 
 echo "[INFO] Shard: ${SHARD_INDEX}/${NUM_SHARDS}"
+echo "[INFO] Nuclei mode: ${NUCLEI_MODE}"
+echo "[INFO] Nuclei model path: ${NUCLEI_MODEL_PATH:-<none>}"
+echo "[INFO] hover-net package model mode: ${HOVERNET_PKG_MODEL_MODE}"
+echo "[INFO] hover-net package nr_types: ${HOVERNET_PKG_NR_TYPES}"
 echo "[INFO] Export patch embeddings: ${EXPORT_PATCH_EMBEDDINGS}"
 
 python "${REPO_ROOT}/examples/svs_graph_embeddings.py" \
@@ -118,6 +129,7 @@ python "${REPO_ROOT}/examples/svs_graph_embeddings.py" \
   --num-workers "${NUM_WORKERS}" \
   --max-tiles-per-slide "${MAX_TILES_PER_SLIDE}" \
   "${NUCLEI_MODEL_ARGS[@]}" \
+  "${HOVERNET_PKG_ARGS[@]}" \
   "${PATCH_ARGS[@]}" \
   --save-graphs \
   --continue-on-error
