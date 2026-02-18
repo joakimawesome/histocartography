@@ -2,7 +2,7 @@
 #SBATCH -J hc_svs_to_pt
 #SBATCH -o %x.%A_%a.out
 #SBATCH -e %x.%A_%a.err
-#SBATCH -p gh
+#SBATCH -p gh-dev
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -t 04:00:00
