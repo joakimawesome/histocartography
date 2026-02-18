@@ -785,14 +785,6 @@ def main() -> None:
     args = _parse_args()
     args.output_dir = args.output_root / args.output_subdir
 
-    if args.num_workers > 0:
-        import multiprocessing as mp
-
-        try:
-            mp.set_start_method("spawn", force=True)
-        except RuntimeError:
-            pass
-
     if not args.input_dir.exists():
         raise FileNotFoundError(f"Input directory not found: {args.input_dir}")
 
