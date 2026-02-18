@@ -539,7 +539,15 @@ class InstanceMapPatchDataset(Dataset):
         )
         self.patch_size_2 = int(self.patch_size // 2)
         self.threshold = int(self.patch_size * self.patch_size * 0.25)
-        self.properties = regionprops(self.instance_map)
+        regions = regionprops(self.instance_map)
+        self.properties = [
+            {
+                "label": int(region.label),
+                "centroid": (float(region.centroid[0]), float(region.centroid[1])),
+                "bbox": tuple(int(value) for value in region.bbox),
+            }
+            for region in regions
+        ]
         self.warning_threshold = 0.75
         self.patch_coordinates = []
         self.patch_region_count = []
@@ -607,12 +615,12 @@ class InstanceMapPatchDataset(Dataset):
         for region_count, region in enumerate(self.properties):
 
             # Extract centroid
-            center_y, center_x = region.centroid
+            center_y, center_x = region["centroid"]
             center_x = int(round(center_x))
             center_y = int(round(center_y))
 
             # Extract bounding box
-            min_y, min_x, max_y, max_x = region.bbox
+            min_y, min_x, max_y, max_x = region["bbox"]
 
             # Extract patch information around the centroid patch 
             # quadrant 1 (includes centroid patch)
@@ -620,7 +628,7 @@ class InstanceMapPatchDataset(Dataset):
             while y_ >= min_y:
                 x_ = copy.deepcopy(center_x)
                 while x_ >= min_x:
-                    self._add_patch(x_, y_, region.label, region_count)
+                    self._add_patch(x_, y_, region["label"], region_count)
                     x_ -= self.stride
                 y_ -= self.stride
 
@@ -629,7 +637,7 @@ class InstanceMapPatchDataset(Dataset):
             while y_ >= min_y:
                 x_ = copy.deepcopy(center_x) + self.stride
                 while x_ <= max_x:
-                    self._add_patch(x_, y_, region.label, region_count)
+                    self._add_patch(x_, y_, region["label"], region_count)
                     x_ += self.stride
                 y_ -= self.stride
 
@@ -638,7 +646,7 @@ class InstanceMapPatchDataset(Dataset):
             while y_ <= max_y:
                 x_ = copy.deepcopy(center_x)
                 while x_ >= min_x:
-                    self._add_patch(x_, y_, region.label, region_count)
+                    self._add_patch(x_, y_, region["label"], region_count)
                     x_ -= self.stride
                 y_ += self.stride
 
@@ -647,12 +655,14 @@ class InstanceMapPatchDataset(Dataset):
             while y_ <= max_y:
                 x_ = copy.deepcopy(center_x) + self.stride
                 while x_ <= max_x:
-                    self._add_patch(x_, y_, region.label, region_count)
+                    self._add_patch(x_, y_, region["label"], region_count)
                     x_ += self.stride
                 y_ += self.stride
 
     def _warning(self):
         """Check patch coverage statistics to identify if provided patch size includes too much background."""
+        if len(self.patch_overlap) == 0:
+            return
         self.patch_overlap = np.array(self.patch_overlap) / (
             self.patch_size * self.patch_size
         )
